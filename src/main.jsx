@@ -1,6 +1,7 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import WoodlandTrivia from './App.jsx'
+import './pixel.css'
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
