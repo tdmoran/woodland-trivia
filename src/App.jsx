@@ -55,6 +55,17 @@ const SFX = {
     setTimeout(() => playTone(150, 0.2, "square", 0.12), 100);
     setTimeout(() => playTone(100, 0.3, "sawtooth", 0.1), 200);
   },
+  hop: () => {
+    const f = 280 + Math.random() * 180;
+    playTone(f, 0.04, "square", 0.1);
+    setTimeout(() => playTone(f * 2, 0.06, "sine", 0.1), 20);
+    setTimeout(() => playTone(f * 1.4, 0.05, "triangle", 0.06), 50);
+  },
+  hopBack: () => {
+    const f = 400 + Math.random() * 100;
+    playTone(f, 0.06, "sawtooth", 0.08);
+    setTimeout(() => playTone(f * 0.6, 0.08, "square", 0.07), 30);
+  },
 };
 
 // ──── LOCAL STORAGE ────
@@ -339,6 +350,7 @@ function gameReducer(state, action) {
     case "ROLL_DICE": {
       const val = action.value;
       const p = state.players[state.currentPlayer];
+      const preRollPos = p.position;
       const newPos = Math.min(p.position + val, NUM_SPACES - 1);
       const space = BOARD_SPACES[newPos];
       const newPlayers = state.players.map((pl, i) => (i === state.currentPlayer ? { ...pl, position: newPos } : pl));
@@ -357,6 +369,7 @@ function gameReducer(state, action) {
           ...state,
           players: newPlayers,
           diceValue: val,
+          preRollPosition: preRollPos,
           currentPlayer: (state.currentPlayer + 1) % state.playerCount,
           message: `${p.name} rolled ${val}. No questions! Next turn.`,
         };
@@ -366,6 +379,7 @@ function gameReducer(state, action) {
         ...state,
         players: newPlayers,
         diceValue: val,
+        preRollPosition: preRollPos,
         phase: "question",
         currentQuestion: question,
         currentCatIndex: catIndex,
@@ -375,6 +389,7 @@ function gameReducer(state, action) {
         timerExpired: false,
         askedQuestions: [...state.askedQuestions, question.question],
         diceDifficulty,
+        questionStartTime: Date.now(),
         message: space.isHub
           ? `${p.name} rolled ${val} — ${diceDifficulty.toUpperCase()} ${CAT_LABELS_SHORT[catIndex]} at ${HUB_NAMES[space.hubIndex]}!`
           : `${p.name} rolled ${val} — ${diceDifficulty.toUpperCase()} ${CAT_LABELS_SHORT[catIndex]} question!`,
@@ -384,13 +399,20 @@ function gameReducer(state, action) {
       const correct = action.answer === state.currentQuestion.answer;
       const p = state.players[state.currentPlayer];
       const space = BOARD_SPACES[p.position];
+      const speedBonus = correct && state.questionStartTime && (Date.now() - state.questionStartTime) <= 4000;
       let newPlayers = state.players.map(pl => ({ ...pl }));
       let winner = null;
-      if (correct && space.isHub) {
-        const f = [...p.feathers];
-        f[state.currentCatIndex] = true;
-        newPlayers[state.currentPlayer] = { ...newPlayers[state.currentPlayer], feathers: f };
-        if (f.every(Boolean)) winner = state.currentPlayer;
+      if (correct) {
+        if (speedBonus) {
+          const bonusPos = Math.min(p.position + 1, NUM_SPACES - 1);
+          newPlayers[state.currentPlayer] = { ...newPlayers[state.currentPlayer], position: bonusPos };
+        }
+        if (space.isHub) {
+          const f = [...newPlayers[state.currentPlayer].feathers];
+          f[state.currentCatIndex] = true;
+          newPlayers[state.currentPlayer] = { ...newPlayers[state.currentPlayer], feathers: f };
+          if (f.every(Boolean)) winner = state.currentPlayer;
+        }
       }
       return {
         ...state,
@@ -398,12 +420,15 @@ function gameReducer(state, action) {
         answerRevealed: true,
         players: newPlayers,
         winner,
+        speedBonus,
         message: correct
           ? winner !== null
             ? `${p.name} wins the game!`
-            : space.isHub
-              ? `Correct! ${p.name} earns a ${CAT_LABELS_SHORT[state.currentCatIndex]} feather!`
-              : `Correct! Well done, ${p.name}!`
+            : speedBonus
+              ? `Correct! SPEED BONUS +1 space!${space.isHub ? ` ${p.name} earns a ${CAT_LABELS_SHORT[state.currentCatIndex]} feather!` : ""}`
+              : space.isHub
+                ? `Correct! ${p.name} earns a ${CAT_LABELS_SHORT[state.currentCatIndex]} feather!`
+                : `Correct! Well done, ${p.name}!`
           : `Wrong! The answer was: ${state.currentQuestion.answer}`,
       };
     }
@@ -429,14 +454,16 @@ function gameReducer(state, action) {
     }
     case "PENALTY_MOVE": {
       const p = state.players[state.currentPlayer];
-      const newPos = Math.max(0, p.position - action.value);
+      const originalPos = state.preRollPosition !== undefined ? state.preRollPosition : p.position;
+      const newPos = Math.max(0, originalPos - action.value);
+      const spacesLost = originalPos - newPos;
       const newPlayers = state.players.map((pl, i) =>
         i === state.currentPlayer ? { ...pl, position: newPos } : pl
       );
       return {
         ...state,
         players: newPlayers,
-        message: `${p.name} moves back ${action.value} space${action.value !== 1 ? "s" : ""}!`,
+        message: `${p.name} goes back ${spacesLost} space${spacesLost !== 1 ? "s" : ""} to ${newPos + 1}!`,
       };
     }
     case "NEXT_TURN": {
@@ -663,7 +690,7 @@ function GameBoard({ spaces, players, currentPlayer }) {
         const sameSpacePlayers = players.filter(pl => pl.position === p.position);
         const myIdx = sameSpacePlayers.findIndex(pl => pl.id === p.id);
         const angle = (myIdx / sameSpacePlayers.length) * Math.PI * 2;
-        const spread = sameSpacePlayers.length > 1 ? 60 : 0;
+        const spread = sameSpacePlayers.length > 1 ? 35 : 0;
         const offsetX = Math.cos(angle) * spread;
         const offsetY = Math.sin(angle) * spread * 0.5;
         const tx = space.x + offsetX;
@@ -672,30 +699,36 @@ function GameBoard({ spaces, players, currentPlayer }) {
         return (
           <g key={`pl${p.id}`} transform={`translate(${tx}, ${ty})`}>
             {/* Shadow */}
-            <ellipse cx={0} cy={20} rx={55} ry={18} fill="rgba(0,0,0,0.25)" />
+            <ellipse cx={0} cy={10} rx={28} ry={9} fill="rgba(0,0,0,0.25)" />
             {/* Bird image token */}
             <image
               href={p.birdImage}
-              x={-110}
-              y={-200}
-              width={220}
-              height={220}
-              style={{ pointerEvents: "none", filter: isCurr ? "drop-shadow(0 0 8px #f0c040)" : "none" }}
+              x={-55}
+              y={-100}
+              width={110}
+              height={110}
+              transform={p.birdImage.includes("pigeon") ? "scale(-1,1)" : undefined}
+              style={{ pointerEvents: "none", filter: isCurr ? "drop-shadow(0 0 6px #f0c040)" : "none" }}
             />
             {/* Highlight ring for current player */}
             {isCurr && (
-              <ellipse cx={0} cy={-90} rx={120} ry={120} fill="none" stroke="#f0c040" strokeWidth={3.5} strokeDasharray="8,5" style={{ animation: "pulse 1.5s infinite" }} />
+              <ellipse cx={0} cy={-45} rx={60} ry={60} fill="none" stroke="#f0c040" strokeWidth={2.5} strokeDasharray="6,4" style={{ animation: "pulse 1.5s infinite" }} />
             )}
+            {/* Position number above token */}
+            <rect x={-20} y={-120} width={40} height={22} rx={5} fill="#f0e8d8" stroke="#8a7a68" strokeWidth={1.5} />
+            <text x={0} y={-104} textAnchor="middle" fontSize="14" fill="#3a2a1a" fontFamily="'Press Start 2P'" fontWeight="bold" style={{ pointerEvents: "none" }}>
+              {p.position + 1}
+            </text>
             {/* Current player name tag */}
             {isCurr && (
               <g>
                 <polygon
-                  points="-8,-218 8,-218 0,-206"
+                  points="-6,-130 6,-130 0,-122"
                   fill="#f0c040"
                   style={{ animation: "bounce 1s infinite" }}
                 />
-                <rect x={-50} y={-242} width={100} height={24} fill="#c89030" stroke="#8a7a68" strokeWidth={2} rx={6} />
-                <text x={0} y={-226} textAnchor="middle" fontSize="11" fill="#f5edd8" fontFamily="'Press Start 2P'" style={{ pointerEvents: "none" }}>
+                <rect x={-40} y={-150} width={80} height={20} fill="#c89030" stroke="#8a7a68" strokeWidth={1.5} rx={5} />
+                <text x={0} y={-137} textAnchor="middle" fontSize="9" fill="#f5edd8" fontFamily="'Press Start 2P'" style={{ pointerEvents: "none" }}>
                   {p.name}
                 </text>
               </g>
@@ -1418,6 +1451,9 @@ export default function WoodlandTrivia() {
   const [penaltyRolling, setPenaltyRolling] = useState(false);
   const [penaltyDisplay, setPenaltyDisplay] = useState(null);
 
+  // Token movement animation
+  const [tokenAnim, setTokenAnim] = useState({ active: false, playerId: null, pos: 0 });
+
   // Board zoom/pan
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
@@ -1441,7 +1477,7 @@ export default function WoodlandTrivia() {
 
   // ── Dice rolling ──
   const rollDice = () => {
-    if (diceRolling || state.phase !== "playing") return;
+    if (diceRolling || tokenAnim.active || state.phase !== "playing") return;
     playSound("click");
     const finalValue = Math.floor(Math.random() * 6) + 1;
     setDiceRolling(true);
@@ -1457,8 +1493,33 @@ export default function WoodlandTrivia() {
         setDiceDisplay(finalValue);
         setDiceRolling(false);
         playSound("land");
+
+        const p = state.players[state.currentPlayer];
+        const fromPos = p.position;
+        const toPos = Math.min(fromPos + finalValue, NUM_SPACES - 1);
+        const totalSteps = toPos - fromPos;
+
+        if (totalSteps <= 0) {
+          setTimeout(() => dispatch({ type: "ROLL_DICE", value: finalValue }), 250);
+          return;
+        }
+
+        // Animate token hop-by-hop along the trail
         setTimeout(() => {
-          dispatch({ type: "ROLL_DICE", value: finalValue });
+          let step = 0;
+          setTokenAnim({ active: true, playerId: p.id, pos: fromPos });
+          const hopInterval = setInterval(() => {
+            step++;
+            setTokenAnim({ active: true, playerId: p.id, pos: fromPos + step });
+            playSound("hop");
+            if (step >= totalSteps) {
+              clearInterval(hopInterval);
+              setTimeout(() => {
+                setTokenAnim({ active: false, playerId: null, pos: 0 });
+                dispatch({ type: "ROLL_DICE", value: finalValue });
+              }, 250);
+            }
+          }, 200);
         }, 250);
       }
     }, 50 + count * 8);
@@ -1515,21 +1576,46 @@ export default function WoodlandTrivia() {
       const finalPenalty = Math.floor(Math.random() * 6) + 1;
       let count = 0;
       const maxFrames = 14;
-      const interval = setInterval(() => {
+      const penaltyInterval = setInterval(() => {
         setPenaltyDisplay(Math.floor(Math.random() * 6) + 1);
         count++;
         if (count >= maxFrames) {
-          clearInterval(interval);
+          clearInterval(penaltyInterval);
           setPenaltyDisplay(finalPenalty);
           setPenaltyRolling(false);
           playSound("wrong");
           setTimeout(() => {
-            dispatch({ type: "PENALTY_MOVE", value: finalPenalty });
-            setTimeout(() => {
-              setShowPenalty(false);
-              setPenaltyDisplay(null);
+            const p = state.players[state.currentPlayer];
+            const originalPos = state.preRollPosition !== undefined ? state.preRollPosition : p.position;
+            const penaltyTarget = Math.max(0, originalPos - finalPenalty);
+            const currentPos = p.position;
+            const backSteps = currentPos - penaltyTarget;
+
+            setShowPenalty(false);
+            setPenaltyDisplay(null);
+
+            if (backSteps <= 0) {
+              dispatch({ type: "PENALTY_MOVE", value: finalPenalty });
               dispatch({ type: "NEXT_TURN" });
-            }, 1500);
+              return;
+            }
+
+            // Animate backward hop-by-hop
+            let bStep = 0;
+            setTokenAnim({ active: true, playerId: p.id, pos: currentPos });
+            const hopInterval = setInterval(() => {
+              bStep++;
+              setTokenAnim({ active: true, playerId: p.id, pos: currentPos - bStep });
+              playSound("hopBack");
+              if (bStep >= backSteps) {
+                clearInterval(hopInterval);
+                setTimeout(() => {
+                  setTokenAnim({ active: false, playerId: null, pos: 0 });
+                  dispatch({ type: "PENALTY_MOVE", value: finalPenalty });
+                  dispatch({ type: "NEXT_TURN" });
+                }, 300);
+              }
+            }, 150);
           }, 800);
         }
       }, 60);
@@ -1858,6 +1944,11 @@ export default function WoodlandTrivia() {
     ? settings.timerSeconds || DIFFICULTY_CONFIG[state.difficulty]?.timer || 20
     : 0;
 
+  // Override player positions during hop animation
+  const displayPlayers = tokenAnim.active
+    ? state.players.map(p => p.id === tokenAnim.playerId ? { ...p, position: tokenAnim.pos } : p)
+    : state.players;
+
   return (
     <div
       style={{
@@ -1939,8 +2030,8 @@ export default function WoodlandTrivia() {
             transition: dragging ? "none" : "transform 0.15s ease",
           }}
         >
-          <div style={{ width: "min(95vh, 98vw)", height: "min(78vh, 78vw)" }}>
-            <GameBoard spaces={BOARD_SPACES} players={state.players} currentPlayer={state.currentPlayer} />
+          <div style={{ width: "100%", height: "100%" }}>
+            <GameBoard spaces={BOARD_SPACES} players={displayPlayers} currentPlayer={state.currentPlayer} />
           </div>
         </div>
 
@@ -2007,33 +2098,55 @@ export default function WoodlandTrivia() {
                   display: "flex",
                   alignItems: "center",
                   gap: 8,
-                  padding: "6px 12px",
-                  background: isCurr ? "rgba(200,144,48,0.15)" : "rgba(240,228,208,0.6)",
-                  border: isCurr ? "2px solid #c89030" : "2px solid #b8a888",
+                  padding: isCurr ? "8px 14px" : "6px 12px",
+                  background: isCurr ? "linear-gradient(135deg, rgba(200,144,48,0.3), rgba(240,200,100,0.2))" : "rgba(240,228,208,0.6)",
+                  border: isCurr ? "3px solid #c89030" : "2px solid #b8a888",
                   borderRadius: 6,
                   transition: "all 0.3s",
-                  boxShadow: isCurr ? "0 0 10px rgba(200,144,48,0.2)" : "2px 2px 0 rgba(80,60,40,0.15)",
+                  boxShadow: isCurr ? "0 0 16px rgba(200,144,48,0.4), inset 0 0 8px rgba(200,144,48,0.15)" : "2px 2px 0 rgba(80,60,40,0.15)",
                   animation: isCurr ? "activeGlow 2s infinite ease-in-out" : "none",
+                  transform: isCurr ? "scale(1.08)" : "scale(1)",
+                  position: "relative",
                 }}
               >
+                {isCurr && (
+                  <div style={{
+                    position: "absolute",
+                    top: -12,
+                    left: "50%",
+                    transform: "translateX(-50%)",
+                    background: "#c89030",
+                    color: "#f5edd8",
+                    fontFamily: "'Press Start 2P'",
+                    fontSize: 6,
+                    padding: "2px 8px",
+                    borderRadius: 3,
+                    whiteSpace: "nowrap",
+                    animation: "bounce 1s infinite",
+                    border: "1px solid #a87020",
+                    zIndex: 2,
+                  }}>
+                    YOUR TURN!
+                  </div>
+                )}
                 <div
                   style={{
-                    width: 34,
-                    height: 34,
-                    background: "#f5edd8",
+                    width: isCurr ? 40 : 34,
+                    height: isCurr ? 40 : 34,
+                    background: isCurr ? "#fff8e8" : "#f5edd8",
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
                     border: `3px solid ${isCurr ? "#c89030" : p.accent}`,
-                    boxShadow: "2px 2px 0 rgba(80,60,40,0.25)",
+                    boxShadow: isCurr ? "0 0 8px rgba(200,144,48,0.3)" : "2px 2px 0 rgba(80,60,40,0.25)",
                     borderRadius: 6,
                     overflow: "hidden",
                   }}
                 >
-                  <img src={p.birdImage} alt={p.name} style={{ width: 28, height: 28, objectFit: "contain" }} />
+                  <img src={p.birdImage} alt={p.name} style={{ width: isCurr ? 34 : 28, height: isCurr ? 34 : 28, objectFit: "contain" }} />
                 </div>
                 <div>
-                  <div style={{ fontSize: 9, color: isCurr ? "#8a6828" : "#5a4a35", fontWeight: "bold" }}>
+                  <div style={{ fontSize: isCurr ? 10 : 9, color: isCurr ? "#8a6828" : "#5a4a35", fontWeight: "bold" }}>
                     {p.name}
                     <span style={{ fontSize: 7, color: "#8a7a68", marginLeft: 4 }}>({p.age >= 15 ? "Adult" : "Child"})</span>
                     {p.hints > 0 && (
@@ -2055,7 +2168,7 @@ export default function WoodlandTrivia() {
                 value={diceDisplay || state.diceValue}
                 rolling={diceRolling}
                 onRoll={rollDice}
-                disabled={diceRolling || state.phase !== "playing"}
+                disabled={diceRolling || tokenAnim.active || state.phase !== "playing"}
               />
               <span style={{ fontFamily: "'Press Start 2P'", fontSize: 7, color: "#6a5a48" }}>
                 {diceRolling ? "..." : "ROLL!"}
@@ -2066,7 +2179,7 @@ export default function WoodlandTrivia() {
       </div>
 
       {/* ── Overlays ── */}
-      {state.phase === "question" && state.currentQuestion && !showPenalty && (
+      {state.phase === "question" && state.currentQuestion && !showPenalty && !tokenAnim.active && (
         <div>
           <QuestionCard
             question={state.currentQuestion}
