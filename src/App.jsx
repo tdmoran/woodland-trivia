@@ -66,6 +66,9 @@ const SFX = {
     playTone(f, 0.06, "sawtooth", 0.08);
     setTimeout(() => playTone(f * 0.6, 0.08, "square", 0.07), 30);
   },
+  bonus: () => {
+    [660, 880, 1100, 1320].forEach((n, i) => setTimeout(() => playTone(n, 0.08, "square", 0.1), i * 60));
+  },
 };
 
 // ──── LOCAL STORAGE ────
@@ -160,14 +163,16 @@ const BOARD_SPACES = SPACE_POINTS.map((pt, i) => {
   const prev = SPACE_POINTS[Math.max(0, i - 1)];
   const next = SPACE_POINTS[Math.min(SPACE_POINTS.length - 1, i + 1)];
   const angle = Math.atan2(next.y - prev.y, next.x - prev.x) * (180 / Math.PI);
+  const isHub = hubIdx >= 0;
   return {
     id: i,
     x: pt.x,
     y: pt.y,
     angle,
     catIndex: hubIdx >= 0 ? hubIdx : i % 6,
-    isHub: hubIdx >= 0,
+    isHub,
     hubIndex: hubIdx,
+    isBonus: (i + 1) % 5 === 0 && !isHub,
   };
 });
 
@@ -313,6 +318,7 @@ function makeInitialState(playerCount, names, ages, difficulty) {
       position: 0,
       feathers: [false, false, false, false, false, false],
       hints: diff.hintsPerPlayer,
+      wrongStreak: 0,
     })),
     currentPlayer: 0,
     diceValue: null,
@@ -349,15 +355,18 @@ function gameReducer(state, action) {
       };
     case "ROLL_DICE": {
       const val = action.value;
+      const bonus = action.bonus || 0;
       const p = state.players[state.currentPlayer];
       const preRollPos = p.position;
-      const newPos = Math.min(p.position + val, NUM_SPACES - 1);
+      const newPos = Math.min(p.position + val + bonus, NUM_SPACES - 1);
       const space = BOARD_SPACES[newPos];
       const newPlayers = state.players.map((pl, i) => (i === state.currentPlayer ? { ...pl, position: newPos } : pl));
       const catIndex = space.catIndex;
       const playerAge = p.age || 99;
       let qs = state.questions[CATEGORIES[catIndex]] || [];
-      const diceDifficulty = val <= 2 ? "easy" : val <= 4 ? "medium" : "hard";
+      // If player has 3+ wrong in a row, force easy difficulty
+      const streakOverride = p.wrongStreak >= 3;
+      const diceDifficulty = streakOverride ? "easy" : (val <= 2 ? "easy" : val <= 4 ? "medium" : "hard");
       const diffFiltered = qs.filter(q => q.difficulty === diceDifficulty);
       if (diffFiltered.length > 0) qs = diffFiltered;
       qs = qs.filter(q => (q.ageMin || 0) <= playerAge);
@@ -375,6 +384,8 @@ function gameReducer(state, action) {
         };
       }
       const question = available[Math.floor(Math.random() * available.length)];
+      const rollMsg = bonus > 0 ? `${val} + ${bonus} bonus` : `${val}`;
+      const streakMsg = streakOverride ? " (easier question!)" : "";
       return {
         ...state,
         players: newPlayers,
@@ -391,8 +402,8 @@ function gameReducer(state, action) {
         diceDifficulty,
         questionStartTime: Date.now(),
         message: space.isHub
-          ? `${p.name} rolled ${val} — ${diceDifficulty.toUpperCase()} ${CAT_LABELS_SHORT[catIndex]} at ${HUB_NAMES[space.hubIndex]}!`
-          : `${p.name} rolled ${val} — ${diceDifficulty.toUpperCase()} ${CAT_LABELS_SHORT[catIndex]} question!`,
+          ? `${p.name} rolled ${rollMsg} — ${diceDifficulty.toUpperCase()} ${CAT_LABELS_SHORT[catIndex]} at ${HUB_NAMES[space.hubIndex]}!${streakMsg}`
+          : `${p.name} rolled ${rollMsg} — ${diceDifficulty.toUpperCase()} ${CAT_LABELS_SHORT[catIndex]} question!${streakMsg}`,
       };
     }
     case "ANSWER": {
@@ -401,6 +412,11 @@ function gameReducer(state, action) {
       const space = BOARD_SPACES[p.position];
       const speedBonus = correct && state.questionStartTime && (Date.now() - state.questionStartTime) <= 4000;
       let newPlayers = state.players.map(pl => ({ ...pl }));
+      // Track wrong streak for difficulty adjustment
+      newPlayers[state.currentPlayer] = {
+        ...newPlayers[state.currentPlayer],
+        wrongStreak: correct ? 0 : (newPlayers[state.currentPlayer].wrongStreak || 0) + 1,
+      };
       let winner = null;
       if (correct) {
         if (speedBonus) {
@@ -590,15 +606,16 @@ function GameBoard({ spaces, players, currentPlayer }) {
       {/* Board spaces — rounded felt tiles */}
       {spaces.map((s) => {
         const isHub = s.isHub;
-        const hw = isHub ? 28 : 18;
-        const hh = isHub ? 20 : 14;
+        const isBonus = s.isBonus;
+        const hw = isHub ? 28 : isBonus ? 20 : 18;
+        const hh = isHub ? 20 : isBonus ? 16 : 14;
         const rx = 6;
         return (
           <g key={`sp${s.id}`} transform={`translate(${s.x}, ${s.y})`}>
             {/* Soft shadow */}
             <rect x={-hw - 1} y={-hh + 2} width={(hw + 1) * 2} height={hh * 2} rx={rx} fill="rgba(60,40,20,0.3)" />
             {/* Cream border for contrast */}
-            <rect x={-hw - 3} y={-hh - 3} width={(hw + 3) * 2} height={(hh + 3) * 2} rx={rx + 2} fill="#f0e8d8" opacity={0.85} />
+            <rect x={-hw - 3} y={-hh - 3} width={(hw + 3) * 2} height={(hh + 3) * 2} rx={rx + 2} fill={isBonus ? "#fff8e0" : "#f0e8d8"} opacity={0.85} />
             {/* Base felt tile */}
             <rect
               x={-hw}
@@ -606,10 +623,10 @@ function GameBoard({ spaces, players, currentPlayer }) {
               width={hw * 2}
               height={hh * 2}
               rx={rx}
-              fill={CAT_COLORS[s.catIndex]}
-              stroke={isHub ? "#c89030" : "#5a4a35"}
-              strokeWidth={isHub ? 3.5 : 2.5}
-              strokeDasharray={isHub ? "none" : "4,3"}
+              fill={isBonus ? "#e8c840" : CAT_COLORS[s.catIndex]}
+              stroke={isHub ? "#c89030" : isBonus ? "#c8a020" : "#5a4a35"}
+              strokeWidth={isHub ? 3.5 : isBonus ? 3 : 2.5}
+              strokeDasharray={isHub ? "none" : isBonus ? "none" : "4,3"}
             />
             {/* Inner felt highlight */}
             <rect x={-hw + 4} y={-hh + 3} width={(hw - 4) * 2} height={(hh - 3) * 2} rx={rx - 2} fill="rgba(255,255,255,0.1)" />
@@ -622,7 +639,7 @@ function GameBoard({ spaces, players, currentPlayer }) {
               x={0}
               y={isHub ? -3 : 3}
               textAnchor="middle"
-              fontSize={isHub ? "9" : "7"}
+              fontSize={isHub ? "14" : "11"}
               fill="#fff"
               stroke="#3a2a1a"
               strokeWidth={2.5}
@@ -633,15 +650,15 @@ function GameBoard({ spaces, players, currentPlayer }) {
             >
               {s.id + 1}
             </text>
-            {/* Category icon */}
+            {/* Category icon or bonus star */}
             <text
               x={0}
               y={isHub ? 14 : 14}
               textAnchor="middle"
-              fontSize={isHub ? "15" : "10"}
+              fontSize={isHub ? "15" : isBonus ? "12" : "10"}
               style={{ pointerEvents: "none" }}
             >
-              {CAT_ICONS[s.catIndex]}
+              {isBonus ? "\u2B50" : CAT_ICONS[s.catIndex]}
             </text>
             {/* Hub name */}
             {isHub && (
@@ -707,7 +724,7 @@ function GameBoard({ spaces, players, currentPlayer }) {
               y={-100}
               width={110}
               height={110}
-              transform={p.birdImage.includes("pigeon") ? "scale(-1,1)" : undefined}
+              transform={(p.birdImage.includes("pigeon") || p.birdImage.includes("duck")) ? "scale(-1,1)" : undefined}
               style={{ pointerEvents: "none", filter: isCurr ? "drop-shadow(0 0 6px #f0c040)" : "none" }}
             />
             {/* Highlight ring for current player */}
@@ -1454,6 +1471,9 @@ export default function WoodlandTrivia() {
   // Token movement animation
   const [tokenAnim, setTokenAnim] = useState({ active: false, playerId: null, pos: 0 });
 
+  // Bonus square notification
+  const [bonusNotif, setBonusNotif] = useState(null);
+
   // Board zoom/pan
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
@@ -1514,10 +1534,45 @@ export default function WoodlandTrivia() {
             playSound("hop");
             if (step >= totalSteps) {
               clearInterval(hopInterval);
-              setTimeout(() => {
-                setTokenAnim({ active: false, playerId: null, pos: 0 });
-                dispatch({ type: "ROLL_DICE", value: finalValue });
-              }, 250);
+              const landingPos = fromPos + totalSteps;
+              const landingSpace = BOARD_SPACES[landingPos];
+
+              // Check for bonus square
+              if (landingSpace && landingSpace.isBonus) {
+                const bonusVal = Math.floor(Math.random() * 6) + 1;
+                playSound("bonus");
+                setBonusNotif(`BONUS! +${bonusVal} spaces!`);
+
+                setTimeout(() => {
+                  const bonusTarget = Math.min(landingPos + bonusVal, NUM_SPACES - 1);
+                  const bonusSteps = bonusTarget - landingPos;
+                  if (bonusSteps <= 0) {
+                    setTokenAnim({ active: false, playerId: null, pos: 0 });
+                    setBonusNotif(null);
+                    dispatch({ type: "ROLL_DICE", value: finalValue, bonus: bonusVal });
+                    return;
+                  }
+                  let bStep = 0;
+                  const bonusHopInterval = setInterval(() => {
+                    bStep++;
+                    setTokenAnim({ active: true, playerId: p.id, pos: landingPos + bStep });
+                    playSound("hop");
+                    if (bStep >= bonusSteps) {
+                      clearInterval(bonusHopInterval);
+                      setTimeout(() => {
+                        setTokenAnim({ active: false, playerId: null, pos: 0 });
+                        setBonusNotif(null);
+                        dispatch({ type: "ROLL_DICE", value: finalValue, bonus: bonusVal });
+                      }, 250);
+                    }
+                  }, 200);
+                }, 600);
+              } else {
+                setTimeout(() => {
+                  setTokenAnim({ active: false, playerId: null, pos: 0 });
+                  dispatch({ type: "ROLL_DICE", value: finalValue });
+                }, 250);
+              }
             }
           }, 200);
         }, 250);
@@ -1573,7 +1628,7 @@ export default function WoodlandTrivia() {
       setShowPenalty(true);
       setPenaltyRolling(true);
       playSound("penalty");
-      const finalPenalty = Math.floor(Math.random() * 6) + 1;
+      const finalPenalty = Math.floor(Math.random() * 4) + 1;
       let count = 0;
       const maxFrames = 14;
       const penaltyInterval = setInterval(() => {
@@ -2034,6 +2089,29 @@ export default function WoodlandTrivia() {
             <GameBoard spaces={BOARD_SPACES} players={displayPlayers} currentPlayer={state.currentPlayer} />
           </div>
         </div>
+
+        {/* Bonus notification */}
+        {bonusNotif && (
+          <div style={{
+            position: "absolute",
+            top: "50%",
+            left: "50%",
+            transform: "translate(-50%, -50%)",
+            background: "linear-gradient(135deg, #f0c040, #e8a820)",
+            color: "#5a3a10",
+            fontFamily: "'Press Start 2P'",
+            fontSize: 18,
+            padding: "16px 32px",
+            borderRadius: 8,
+            border: "4px solid #c89030",
+            boxShadow: "0 0 30px rgba(200,144,48,0.6), 4px 4px 0 rgba(80,60,40,0.3)",
+            zIndex: 20,
+            animation: "pixelGrow 0.3s ease-out",
+            textAlign: "center",
+          }}>
+            {bonusNotif}
+          </div>
+        )}
 
         {/* Zoom controls */}
         <div style={{ position: "absolute", bottom: 12, right: 12, display: "flex", flexDirection: "column", gap: 3 }}>
