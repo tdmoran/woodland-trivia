@@ -88,40 +88,6 @@ const DIFFICULTY_CONFIG = {
 };
 
 // ──── CATMULL-ROM PATH GENERATION ────
-// Longer winding trail across a wider landscape (viewBox 1800x1100)
-const TRAIL_WAYPOINTS = [
-  { x: 100, y: 1000 }, { x: 220, y: 940 }, { x: 380, y: 870 },
-  { x: 560, y: 810 }, { x: 740, y: 780 }, { x: 920, y: 830 },
-  { x: 1080, y: 890 }, { x: 1220, y: 830 }, { x: 1340, y: 740 },
-  { x: 1420, y: 620 }, { x: 1340, y: 500 }, { x: 1160, y: 450 },
-  { x: 960, y: 490 }, { x: 780, y: 540 }, { x: 600, y: 500 },
-  { x: 440, y: 440 }, { x: 320, y: 360 }, { x: 400, y: 260 },
-  { x: 560, y: 200 }, { x: 740, y: 170 }, { x: 940, y: 200 },
-  { x: 1120, y: 260 }, { x: 1300, y: 200 }, { x: 1480, y: 130 },
-  { x: 1640, y: 100 },
-];
-
-function catmullRomPoint(p0, p1, p2, p3, t) {
-  const t2 = t * t, t3 = t2 * t;
-  return {
-    x: 0.5 * ((2 * p1.x) + (-p0.x + p2.x) * t + (2 * p0.x - 5 * p1.x + 4 * p2.x - p3.x) * t2 + (-p0.x + 3 * p1.x - 3 * p2.x + p3.x) * t3),
-    y: 0.5 * ((2 * p1.y) + (-p0.y + p2.y) * t + (2 * p0.y - 5 * p1.y + 4 * p2.y - p3.y) * t2 + (-p0.y + 3 * p1.y - 3 * p2.y + p3.y) * t3),
-  };
-}
-
-function samplePath(waypoints, n) {
-  const pts = [waypoints[0], ...waypoints, waypoints[waypoints.length - 1]];
-  const segments = pts.length - 3;
-  const points = [];
-  for (let i = 0; i < n; i++) {
-    const t = (i / (n - 1)) * segments;
-    const seg = Math.min(Math.floor(t), segments - 1);
-    const lt = t - seg;
-    points.push(catmullRomPoint(pts[seg], pts[seg + 1], pts[seg + 2], pts[seg + 3], lt));
-  }
-  return points;
-}
-
 function catmullRomToSvgPath(waypoints) {
   const pts = [waypoints[0], ...waypoints, waypoints[waypoints.length - 1]];
   let d = `M${pts[1].x.toFixed(1)},${pts[1].y.toFixed(1)}`;
@@ -136,23 +102,265 @@ function catmullRomToSvgPath(waypoints) {
   return d;
 }
 
+// ──── MAZE GRAPH (50 nodes, 5 junctions, 6 hubs) ────
+// Layout: bottom-to-top, branching at junctions
+// Junctions: 3, 12, 22, 29, 39
+// Hubs: 6(cat0), 15(cat1), 23(cat2), 25(cat3), 32(cat4), 47(cat5)
 const NUM_SPACES = 50;
-const TRAIL_PATH_D = catmullRomToSvgPath(TRAIL_WAYPOINTS);
-const SPACE_POINTS = samplePath(TRAIL_WAYPOINTS, NUM_SPACES);
-const HUB_INDICES = [7, 15, 23, 31, 39, 47];
+const HUB_INDICES = [6, 15, 23, 25, 32, 47];
 const HUB_NAMES = ["The Old Oak", "Mossy Bridge", "Bramble Hollow", "Rookery Tower", "Magpie's Market", "Blackbird Pond"];
+const JUNCTION_INDICES = [3, 12, 22, 29, 39];
 
-const BOARD_SPACES = SPACE_POINTS.map((pt, i) => {
-  const hubIdx = HUB_INDICES.indexOf(i);
+// Node positions laid out on 1800x1100 board
+const MAZE_NODE_DEFS = [
+  // Stem: 0-3 (bottom center, moving up)
+  { id: 0, x: 900, y: 1040 },  // START
+  { id: 1, x: 900, y: 970 },
+  { id: 2, x: 900, y: 900 },
+  { id: 3, x: 900, y: 830 },   // JUNCTION 1
+
+  // Junction 1 left branch: 4-7 (left toward hub1)
+  { id: 4, x: 720, y: 800 },
+  { id: 5, x: 580, y: 770 },
+  { id: 6, x: 440, y: 750 },   // HUB 1 (Nature) — The Old Oak
+  { id: 7, x: 560, y: 720 },
+
+  // Junction 1 right branch: 8-10
+  { id: 8, x: 1080, y: 800 },
+  { id: 9, x: 1220, y: 770 },
+  { id: 10, x: 1340, y: 740 },
+
+  // Merge after J1: 11-12
+  { id: 11, x: 900, y: 700 },
+  { id: 12, x: 900, y: 640 },  // JUNCTION 2
+
+  // Junction 2 left branch: 13-16 (toward hub2)
+  { id: 13, x: 700, y: 620 },
+  { id: 14, x: 540, y: 600 },
+  { id: 15, x: 400, y: 580 },  // HUB 2 (History) — Mossy Bridge
+  { id: 16, x: 540, y: 555 },
+
+  // Junction 2 middle: 17
+  { id: 17, x: 900, y: 570 },
+
+  // Junction 2 right branch: 18-20
+  { id: 18, x: 1100, y: 620 },
+  { id: 19, x: 1260, y: 600 },
+  { id: 20, x: 1360, y: 570 },
+
+  // Merge after J2: 21-22
+  { id: 21, x: 900, y: 500 },
+  { id: 22, x: 900, y: 440 },  // JUNCTION 3
+
+  // Junction 3 left branch: 23-24 (hub3)
+  { id: 23, x: 680, y: 415 },  // HUB 3 (Science) — Bramble Hollow
+  { id: 24, x: 560, y: 390 },
+
+  // Junction 3 right branch: 25
+  { id: 25, x: 1140, y: 415 }, // HUB 4 (Arts) — Rookery Tower
+
+  // Merge after J3: 26-29
+  { id: 26, x: 900, y: 370 },
+  { id: 27, x: 900, y: 310 },
+  { id: 28, x: 900, y: 250 },
+  { id: 29, x: 900, y: 190 },  // JUNCTION 4
+
+  // Junction 4 left branch: 30-32
+  { id: 30, x: 700, y: 175 },
+  { id: 31, x: 550, y: 160 },
+  { id: 32, x: 420, y: 145 },  // HUB 5 (Food) — Magpie's Market
+
+  // Junction 4 middle: 33 (straight ahead)
+  { id: 33, x: 900, y: 130 },
+
+  // Junction 4 right branch: 34-36
+  { id: 34, x: 1120, y: 175 },
+  { id: 35, x: 1280, y: 160 },
+  { id: 36, x: 1420, y: 145 },
+
+  // Merge after J4: 37-39
+  { id: 37, x: 900, y: 80 },
+  { id: 38, x: 580, y: 60 },
+  { id: 39, x: 400, y: 50 },   // JUNCTION 5
+
+  // Junction 5 left branch: 40-42
+  { id: 40, x: 260, y: 85 },
+  { id: 41, x: 180, y: 130 },
+  { id: 42, x: 130, y: 190 },
+
+  // Junction 5 right branch: 43-46
+  { id: 43, x: 260, y: 30 },
+  { id: 44, x: 180, y: 60 },
+  { id: 45, x: 130, y: 110 },
+  { id: 46, x: 100, y: 180 },
+
+  // Merge + finish: 47-49
+  { id: 47, x: 130, y: 270 },  // HUB 6 (Riddles) — Blackbird Pond
+  { id: 48, x: 180, y: 350 },
+  { id: 49, x: 250, y: 420 },  // FINISH
+];
+
+// Adjacency: node connections (edges of the maze, bidirectional)
+// forward[] = which nodes you can move toward from this node (toward finish)
+// "connections" = all adjacent node IDs
+const MAZE_EDGES = [
+  [0, 1], [1, 2], [2, 3],                    // stem
+  [3, 4], [4, 5], [5, 6], [6, 7],            // J1 left
+  [3, 8], [8, 9], [9, 10],                   // J1 right
+  [7, 11], [10, 11], [11, 12],               // merge into J2
+  [12, 13], [13, 14], [14, 15], [15, 16],    // J2 left
+  [12, 17],                                   // J2 middle
+  [12, 18], [18, 19], [19, 20],              // J2 right
+  [16, 21], [17, 21], [20, 21], [21, 22],    // merge into J3
+  [22, 23], [23, 24],                         // J3 left
+  [22, 25],                                   // J3 right
+  [24, 26], [25, 26], [26, 27], [27, 28], [28, 29], // merge into J4
+  [29, 30], [30, 31], [31, 32],              // J4 left
+  [29, 33],                                   // J4 middle
+  [29, 34], [34, 35], [35, 36],              // J4 right
+  [32, 37], [33, 37], [36, 37],              // merge
+  [37, 38], [38, 39],                         // into J5
+  [39, 40], [40, 41], [41, 42],              // J5 left
+  [39, 43], [43, 44], [44, 45], [45, 46],   // J5 right
+  [42, 47], [46, 47],                         // merge at hub6
+  [47, 48], [48, 49],                         // to finish
+];
+
+// Build adjacency list
+const ADJACENCY = Array.from({ length: NUM_SPACES }, () => []);
+for (const [a, b] of MAZE_EDGES) {
+  if (!ADJACENCY[a].includes(b)) ADJACENCY[a].push(b);
+  if (!ADJACENCY[b].includes(a)) ADJACENCY[b].push(a);
+}
+
+// Build MAZE_NODES with all properties
+const MAZE_NODES = MAZE_NODE_DEFS.map((def) => {
+  const hubIdx = HUB_INDICES.indexOf(def.id);
+  const isJunction = JUNCTION_INDICES.includes(def.id);
+  // Calculate angle from first connection for tile rotation
+  const conns = ADJACENCY[def.id];
+  let angle = 0;
+  if (conns.length > 0) {
+    const neighbor = MAZE_NODE_DEFS[conns[0]];
+    angle = Math.atan2(neighbor.y - def.y, neighbor.x - def.x) * (180 / Math.PI);
+  }
   return {
-    id: i,
-    x: pt.x,
-    y: pt.y,
-    catIndex: hubIdx >= 0 ? hubIdx : i % 6,
+    id: def.id,
+    x: def.x,
+    y: def.y,
+    angle,
+    catIndex: hubIdx >= 0 ? hubIdx : def.id % 6,
     isHub: hubIdx >= 0,
     hubIndex: hubIdx,
+    isJunction,
+    connections: conns,
   };
 });
+
+// For backward compatibility alias
+const BOARD_SPACES = MAZE_NODES;
+
+// Generate SVG path strings per edge for trail rendering
+const MAZE_EDGE_PATHS = MAZE_EDGES.map(([a, b]) => {
+  const na = MAZE_NODE_DEFS[a], nb = MAZE_NODE_DEFS[b];
+  return `M${na.x},${na.y} L${nb.x},${nb.y}`;
+});
+
+// ──── PATHFINDING HELPERS ────
+// BFS to find all nodes reachable within `steps` from `startNode`, moving only forward (away from start/node 0)
+// Returns array of { nodeId, path } where path is the sequence of node IDs visited
+function findReachableNodes(startNode, steps) {
+  // BFS with distance tracking
+  const queue = [{ node: startNode, dist: 0, path: [startNode] }];
+  const results = [];
+  const visited = new Set();
+  visited.add(startNode);
+
+  while (queue.length > 0) {
+    const { node, dist, path } = queue.shift();
+    if (dist === steps) {
+      results.push({ nodeId: node, path });
+      continue;
+    }
+    const neighbors = ADJACENCY[node];
+    // Only move forward (to higher-numbered nodes generally, but use all connections)
+    for (const next of neighbors) {
+      // Don't go backward through the path we just took
+      if (path.includes(next)) continue;
+      const newPath = [...path, next];
+      if (dist + 1 === steps) {
+        results.push({ nodeId: next, path: newPath });
+      } else {
+        // Check if next node is a junction with multiple forward options
+        const forwardNeighbors = ADJACENCY[next].filter(n => !newPath.includes(n));
+        if (JUNCTION_INDICES.includes(next) && forwardNeighbors.length > 1) {
+          // Stop at junction — player must choose
+          results.push({ nodeId: next, path: newPath, remainingSteps: steps - dist - 1, isJunction: true });
+        } else {
+          queue.push({ node: next, dist: dist + 1, path: newPath });
+        }
+      }
+    }
+    // If no forward neighbors, this is a dead end — stop here
+    if (neighbors.filter(n => !path.includes(n)).length === 0 && dist < steps) {
+      results.push({ nodeId: node, path });
+    }
+  }
+  return results;
+}
+
+// Get shortest path between two nodes
+function getPathBetween(from, to) {
+  const queue = [{ node: from, path: [from] }];
+  const visited = new Set([from]);
+  while (queue.length > 0) {
+    const { node, path } = queue.shift();
+    if (node === to) return path;
+    for (const next of ADJACENCY[node]) {
+      if (!visited.has(next)) {
+        visited.add(next);
+        queue.push({ node: next, path: [...path, next] });
+      }
+    }
+  }
+  return [from]; // fallback
+}
+
+// Get forward directions from a junction node, given the path taken so far
+function getJunctionChoices(junctionNode, pathHistory) {
+  const neighbors = ADJACENCY[junctionNode].filter(n => !pathHistory.includes(n));
+  // Label the directions based on relative position
+  return neighbors.map(n => {
+    const jn = MAZE_NODE_DEFS[junctionNode];
+    const nn = MAZE_NODE_DEFS[n];
+    const dx = nn.x - jn.x;
+    const dy = nn.y - jn.y;
+    const angle = Math.atan2(dy, dx) * (180 / Math.PI);
+    // Determine rough direction name
+    let dirName;
+    if (Math.abs(dx) < 50) dirName = dy < 0 ? "Straight" : "Back";
+    else if (dx < 0) dirName = "Left";
+    else dirName = "Right";
+    // Check what's ahead on this path
+    let hubAhead = null;
+    const visited = new Set(pathHistory);
+    visited.add(junctionNode);
+    const scout = [n];
+    const scouted = new Set([n]);
+    for (let step = 0; step < 6 && scout.length > 0; step++) {
+      const curr = scout.shift();
+      const node = MAZE_NODES[curr];
+      if (node.isHub) { hubAhead = node.hubIndex; break; }
+      for (const next of ADJACENCY[curr]) {
+        if (!visited.has(next) && !scouted.has(next)) {
+          scouted.add(next);
+          scout.push(next);
+        }
+      }
+    }
+    return { nextNode: n, dirName, hubAhead, angle };
+  });
+}
 
 // ──── DETERMINISTIC DECORATIONS ────
 function seededRng(seed) {
@@ -166,64 +374,122 @@ function seededRng(seed) {
 
 const rng = seededRng(42);
 function nearPath(x, y, dist = 48) {
-  return BOARD_SPACES.some(s => Math.abs(s.x - x) < dist && Math.abs(s.y - y) < dist);
+  // Check proximity to any maze node
+  if (MAZE_NODES.some(s => Math.abs(s.x - x) < dist && Math.abs(s.y - y) < dist)) return true;
+  // Also check proximity to edge midpoints for paths between nodes
+  for (const [a, b] of MAZE_EDGES) {
+    const na = MAZE_NODE_DEFS[a], nb = MAZE_NODE_DEFS[b];
+    const mx = (na.x + nb.x) / 2, my = (na.y + nb.y) / 2;
+    if (Math.abs(mx - x) < dist && Math.abs(my - y) < dist) return true;
+  }
+  return false;
 }
 
 const DECO = [];
 const BOARD_W = 1800, BOARD_H = 1100;
-// Trees (pine, oak, birch) — more for bigger board
-for (let i = 0; i < 50; i++) {
-  const x = 30 + rng() * (BOARD_W - 60);
-  const y = 30 + rng() * (BOARD_H - 60);
+
+// ── Felt image configuration ──
+const FELT_IMAGES = {
+  pine: { src: "/felt/pine-tree.png", w: 50, h: 78 },
+  "pine-dark": { src: "/felt/pine-dark.png", w: 50, h: 78 },
+  "pine-light": { src: "/felt/pine-light.png", w: 50, h: 78 },
+  "pine-olive": { src: "/felt/pine-olive.png", w: 50, h: 78 },
+  "pine-emerald": { src: "/felt/pine-emerald.png", w: 50, h: 78 },
+  "pine-sage": { src: "/felt/pine-sage.png", w: 50, h: 78 },
+  birch: { src: "/felt/birch-tree.png", w: 45, h: 73 },
+  "birch2": { src: "/felt/birch-tree-2.png", w: 45, h: 73 },
+  "berry-branch": { src: "/felt/berry-branch.png", w: 35, h: 38 },
+  acorn: { src: "/felt/acorn.png", w: 28, h: 33 },
+  "mushroom-red": { src: "/felt/mushroom-red.png", w: 32, h: 37 },
+  "mushroom-brown": { src: "/felt/mushroom-brown.png", w: 30, h: 28 },
+  "oak-leaf": { src: "/felt/oak-leaf.png", w: 30, h: 38 },
+  fern: { src: "/felt/fern.png", w: 35, h: 34 },
+  rabbit: { src: "/felt/rabbit.png", w: 40, h: 54 },
+  fox: { src: "/felt/fox.png", w: 45, h: 53 },
+  owl: { src: "/felt/owl.png", w: 40, h: 44 },
+  hedgehog: { src: "/felt/hedgehog.png", w: 40, h: 30 },
+  squirrel: { src: "/felt/squirrel.png", w: 45, h: 37 },
+  bear: { src: "/felt/bear.png", w: 40, h: 64 },
+  snail: { src: "/felt/snail.png", w: 38, h: 25 },
+};
+
+// Dense pine forests between the trail
+const PINE_TYPES = ["pine", "pine", "pine-dark", "pine-dark", "pine-light", "pine-olive", "pine-emerald", "pine-sage"];
+for (let i = 0; i < 600; i++) {
+  const x = 10 + rng() * (BOARD_W - 20);
+  const y = 60 + rng() * (BOARD_H - 70);
+  // Keep trees clear of the trail so the path stays visible
   if (!nearPath(x, y, 55)) {
-    const types = ["pine", "oak", "birch"];
-    DECO.push({ type: types[Math.floor(rng() * 3)], x, y, scale: 0.6 + rng() * 0.6 });
+    const type = PINE_TYPES[Math.floor(rng() * PINE_TYPES.length)];
+    const scale = 0.3 + rng() * 0.8;  // wide range: small distant trees to large foreground
+    DECO.push({ type, x, y, scale });
   }
 }
-// Rocks
-for (let i = 0; i < 18; i++) {
+// Scatter a few birch trees for variety
+for (let i = 0; i < 15; i++) {
+  const x = 40 + rng() * (BOARD_W - 80);
+  const y = 100 + rng() * (BOARD_H - 140);
+  if (!nearPath(x, y, 35)) {
+    DECO.push({ type: rng() > 0.5 ? "birch" : "birch2", x, y, scale: 0.6 + rng() * 0.5 });
+  }
+}
+// Acorns (replacing rocks)
+for (let i = 0; i < 10; i++) {
   const x = 50 + rng() * (BOARD_W - 100);
   const y = 50 + rng() * (BOARD_H - 100);
-  if (!nearPath(x, y, 40)) DECO.push({ type: "rock", x, y, scale: 0.5 + rng() * 0.7 });
+  if (!nearPath(x, y, 40)) DECO.push({ type: "acorn", x, y, scale: 0.6 + rng() * 0.6 });
 }
-// Bushes
-for (let i = 0; i < 22; i++) {
+// Berry branches & bushes
+for (let i = 0; i < 12; i++) {
   const x = 40 + rng() * (BOARD_W - 80);
   const y = 40 + rng() * (BOARD_H - 80);
-  if (!nearPath(x, y, 40)) DECO.push({ type: "bush", x, y, scale: 0.5 + rng() * 0.5 });
+  if (!nearPath(x, y, 42)) DECO.push({ type: "berry-branch", x, y, scale: 0.6 + rng() * 0.5 });
 }
-// Mushrooms
-for (let i = 0; i < 16; i++) {
+// Mushrooms (mix of red and brown)
+for (let i = 0; i < 12; i++) {
   const x = 60 + rng() * (BOARD_W - 120);
   const y = 60 + rng() * (BOARD_H - 120);
-  if (!nearPath(x, y, 35)) DECO.push({ type: "mushroom", x, y });
+  if (!nearPath(x, y, 35)) DECO.push({ type: rng() > 0.5 ? "mushroom-red" : "mushroom-brown", x, y, scale: 0.6 + rng() * 0.5 });
 }
-// Flowers
-for (let i = 0; i < 24; i++) {
+// Leaves & ferns
+for (let i = 0; i < 14; i++) {
   const x = 50 + rng() * (BOARD_W - 100);
   const y = 50 + rng() * (BOARD_H - 100);
-  const colors = ["#e080a0", "#f0d040", "#80c0f0", "#f0a060", "#c090e0", "#ffffff"];
-  if (!nearPath(x, y, 30)) DECO.push({ type: "flowers", x, y, color: colors[Math.floor(rng() * colors.length)] });
+  if (!nearPath(x, y, 30)) DECO.push({ type: rng() > 0.5 ? "oak-leaf" : "fern", x, y, scale: 0.5 + rng() * 0.5 });
 }
-// Logs
-for (let i = 0; i < 8; i++) {
-  const x = 80 + rng() * (BOARD_W - 160);
-  const y = 80 + rng() * (BOARD_H - 160);
-  if (!nearPath(x, y, 45)) DECO.push({ type: "log", x, y, angle: rng() * 60 - 30 });
-}
-// Animals
-const animalTypes = ["rabbit", "rabbit", "deer", "deer", "fox", "owl", "rabbit", "owl"];
+// Animals — min Y accounts for tallest animal (bear h:64) at max scale
+const animalTypes = ["fox", "fox", "rabbit", "rabbit", "owl", "owl", "hedgehog", "squirrel", "bear", "snail"];
 for (let i = 0; i < animalTypes.length; i++) {
   const x = 60 + rng() * (BOARD_W - 120);
-  const y = 60 + rng() * (BOARD_H - 120);
-  if (!nearPath(x, y, 60)) DECO.push({ type: animalTypes[i], x, y });
+  const y = 90 + rng() * (BOARD_H - 150);
+  if (!nearPath(x, y, 55)) DECO.push({ type: animalTypes[i], x, y, scale: 0.7 + rng() * 0.4 });
 }
 // Sort by Y for depth ordering
 DECO.sort((a, b) => a.y - b.y);
 
+// ──── STREAM & POND ────
+const STREAM_WAYPOINTS = [
+  { x: 120, y: 30 }, { x: 165, y: 160 }, { x: 105, y: 300 },
+  { x: 175, y: 440 }, { x: 125, y: 580 }, { x: 165, y: 710 },
+];
+const STREAM_PATH_D2 = catmullRomToSvgPath(STREAM_WAYPOINTS);
+
+// ──── FALLING LEAVES ────
+const FALLING_LEAVES = [];
+const leafRng = seededRng(77);
+for (let i = 0; i < 15; i++) {
+  FALLING_LEAVES.push({
+    x: 60 + leafRng() * (BOARD_W - 120),
+    delay: leafRng() * 18,
+    duration: 14 + leafRng() * 10,
+    size: 0.6 + leafRng() * 0.7,
+    color: ["#8B4513", "#D2691E", "#CD853F", "#DAA520", "#B8860B", "#a0522d", "#6b8e23"][Math.floor(leafRng() * 7)],
+  });
+}
+
 // ──── PLAYER CONFIG ────
 const BIRD_NAMES = ["Crow", "Magpie", "Rook", "Jackdaw"];
-const BIRD_COLORS = ["#1a1a2e", "#c8baa8", "#3d2b5a", "#4a5d6b"];
+const BIRD_COLORS = ["#5a4a35", "#c8baa8", "#7a5a80", "#5a7a68"];
 const BIRD_ACCENTS = ["#ffd700", "#4488cc", "#b070e0", "#50b050"];
 const BIRD_EMOJIS = ["\u{1F426}\u{200D}\u{2B1B}", "\u{1F426}", "\u{1FAB6}", "\u{1F54A}\u{FE0F}"];
 
@@ -241,7 +507,8 @@ function makeInitialState(playerCount, names, ages, difficulty) {
       color: BIRD_COLORS[i],
       accent: BIRD_ACCENTS[i],
       emoji: BIRD_EMOJIS[i],
-      position: 0,
+      currentNode: 0,
+      pathHistory: [0],
       feathers: [false, false, false, false, false, false],
       hints: diff.hintsPerPlayer,
     })),
@@ -260,6 +527,84 @@ function makeInitialState(playerCount, names, ages, difficulty) {
     showSettings: false,
     timerExpired: false,
     askedQuestions: [],
+    // Maze-specific state
+    junctionChoices: null,    // available choices at current junction
+    remainingSteps: 0,        // steps left after hitting a junction
+  };
+}
+
+// Helper: move player along the maze, stopping at junctions
+function movePlayerForward(player, steps) {
+  let current = player.currentNode;
+  let history = [...player.pathHistory];
+  let remaining = steps;
+
+  while (remaining > 0) {
+    const neighbors = ADJACENCY[current].filter(n => !history.includes(n));
+    if (neighbors.length === 0) break; // dead end or finish
+
+    if (JUNCTION_INDICES.includes(current) && neighbors.length > 1) {
+      // Hit a junction — must stop and choose
+      return { currentNode: current, pathHistory: history, remainingSteps: remaining, atJunction: true };
+    }
+
+    // Only one way forward — auto-move
+    const next = neighbors[0];
+    history.push(next);
+    current = next;
+    remaining--;
+
+    // Check if we landed ON a junction with choices ahead (for next step)
+    if (remaining > 0 && JUNCTION_INDICES.includes(current)) {
+      const fwd = ADJACENCY[current].filter(n => !history.includes(n));
+      if (fwd.length > 1) {
+        return { currentNode: current, pathHistory: history, remainingSteps: remaining, atJunction: true };
+      }
+    }
+  }
+
+  return { currentNode: current, pathHistory: history, remainingSteps: 0, atJunction: false };
+}
+
+function askQuestion(state, player, space, val, newPlayers) {
+  const catIndex = space.catIndex;
+  const playerAge = player.age || 99;
+  let qs = state.questions[CATEGORIES[catIndex]] || [];
+  const diceDifficulty = val <= 2 ? "easy" : val <= 4 ? "medium" : "hard";
+  const diffFiltered = qs.filter(q => q.difficulty === diceDifficulty);
+  if (diffFiltered.length > 0) qs = diffFiltered;
+  qs = qs.filter(q => (q.ageMin || 0) <= playerAge);
+  let available = qs.filter(q => !state.askedQuestions.includes(q.question));
+  if (available.length === 0) available = qs;
+  if (available.length === 0) available = state.questions[CATEGORIES[catIndex]] || [];
+  if (available.length === 0) {
+    return {
+      ...state,
+      players: newPlayers,
+      diceValue: val,
+      currentPlayer: (state.currentPlayer + 1) % state.playerCount,
+      message: `${player.name} rolled ${val}. No questions! Next turn.`,
+    };
+  }
+  const question = available[Math.floor(Math.random() * available.length)];
+  return {
+    ...state,
+    players: newPlayers,
+    diceValue: val,
+    phase: "question",
+    currentQuestion: question,
+    currentCatIndex: catIndex,
+    selectedAnswer: null,
+    answerRevealed: false,
+    eliminatedOptions: [],
+    timerExpired: false,
+    askedQuestions: [...state.askedQuestions, question.question],
+    diceDifficulty,
+    junctionChoices: null,
+    remainingSteps: 0,
+    message: space.isHub
+      ? `${player.name} rolled ${val} — ${diceDifficulty.toUpperCase()} ${CAT_LABELS_SHORT[catIndex]} at ${HUB_NAMES[space.hubIndex]}!`
+      : `${player.name} rolled ${val} — ${diceDifficulty.toUpperCase()} ${CAT_LABELS_SHORT[catIndex]} question!`,
   };
 }
 
@@ -281,56 +626,79 @@ function gameReducer(state, action) {
     case "ROLL_DICE": {
       const val = action.value;
       const p = state.players[state.currentPlayer];
-      const newPos = Math.min(p.position + val, NUM_SPACES - 1);
-      const space = BOARD_SPACES[newPos];
-      const newPlayers = state.players.map((pl, i) => (i === state.currentPlayer ? { ...pl, position: newPos } : pl));
-      const catIndex = space.catIndex;
-      const diff = state.difficulty;
-      const playerAge = p.age || 99;
-      let qs = state.questions[CATEGORIES[catIndex]] || [];
-      // Filter by difficulty
-      if (diff === "easy") qs = qs.filter(q => q.difficulty !== "hard");
-      else if (diff === "hard") qs = qs.filter(q => q.difficulty !== "easy");
-      // Filter by player age
-      qs = qs.filter(q => (q.ageMin || 0) <= playerAge);
-      // Filter out already-asked
-      let available = qs.filter(q => !state.askedQuestions.includes(q.question));
-      // If none available, allow repeats
-      if (available.length === 0) available = qs;
-      // Fallback to all questions in category
-      if (available.length === 0) available = state.questions[CATEGORIES[catIndex]] || [];
-      if (available.length === 0) {
+      const moveResult = movePlayerForward(p, val);
+      const space = MAZE_NODES[moveResult.currentNode];
+      const newPlayers = state.players.map((pl, i) =>
+        i === state.currentPlayer
+          ? { ...pl, currentNode: moveResult.currentNode, pathHistory: moveResult.pathHistory }
+          : pl
+      );
+
+      if (moveResult.atJunction) {
+        // Player hit a junction — show direction picker
+        const choices = getJunctionChoices(moveResult.currentNode, moveResult.pathHistory);
         return {
           ...state,
           players: newPlayers,
           diceValue: val,
-          currentPlayer: (state.currentPlayer + 1) % state.playerCount,
-          message: `${p.name} rolled ${val}. No questions! Next turn.`,
+          phase: "junction-choice",
+          remainingSteps: moveResult.remainingSteps,
+          junctionChoices: choices,
+          message: `${p.name} rolled ${val} — Choose your path!`,
         };
       }
-      const question = available[Math.floor(Math.random() * available.length)];
-      return {
-        ...state,
-        players: newPlayers,
-        diceValue: val,
-        phase: "question",
-        currentQuestion: question,
-        currentCatIndex: catIndex,
-        selectedAnswer: null,
-        answerRevealed: false,
-        eliminatedOptions: [],
-        timerExpired: false,
-        askedQuestions: [...state.askedQuestions, question.question],
-        message: space.isHub
-          ? `${p.name} rolled ${val} and landed on ${HUB_NAMES[space.hubIndex]}!`
-          : `${p.name} rolled ${val}! ${CAT_LABELS_SHORT[catIndex]} question...`,
-      };
+
+      // Normal move — ask a question
+      return askQuestion(state, p, space, val, newPlayers);
+    }
+    case "CHOOSE_PATH": {
+      // Player chose a direction at a junction
+      const p = state.players[state.currentPlayer];
+      const chosenNext = action.nextNode;
+      let history = [...p.pathHistory, chosenNext];
+      let current = chosenNext;
+      let remaining = state.remainingSteps - 1;
+
+      // Continue moving after the choice
+      if (remaining > 0) {
+        const contResult = movePlayerForward(
+          { currentNode: current, pathHistory: history },
+          remaining
+        );
+        current = contResult.currentNode;
+        history = contResult.pathHistory;
+
+        if (contResult.atJunction) {
+          const newPlayers = state.players.map((pl, i) =>
+            i === state.currentPlayer
+              ? { ...pl, currentNode: current, pathHistory: history }
+              : pl
+          );
+          const choices = getJunctionChoices(current, history);
+          return {
+            ...state,
+            players: newPlayers,
+            phase: "junction-choice",
+            remainingSteps: contResult.remainingSteps,
+            junctionChoices: choices,
+            message: `${p.name} reached another fork — Choose your path!`,
+          };
+        }
+      }
+
+      const space = MAZE_NODES[current];
+      const newPlayers = state.players.map((pl, i) =>
+        i === state.currentPlayer
+          ? { ...pl, currentNode: current, pathHistory: history }
+          : pl
+      );
+      return askQuestion(state, p, space, state.diceValue, newPlayers);
     }
     case "ANSWER": {
       const correct = action.answer === state.currentQuestion.answer;
       const p = state.players[state.currentPlayer];
-      const space = BOARD_SPACES[p.position];
-      let newPlayers = state.players.map(pl => ({ ...pl }));
+      const space = MAZE_NODES[p.currentNode];
+      let newPlayers = state.players.map(pl => ({ ...pl, pathHistory: [...pl.pathHistory] }));
       let winner = null;
       if (correct && space.isHub) {
         const f = [...p.feathers];
@@ -375,9 +743,16 @@ function gameReducer(state, action) {
     }
     case "PENALTY_MOVE": {
       const p = state.players[state.currentPlayer];
-      const newPos = Math.max(0, p.position - action.value);
+      // Walk backward through pathHistory
+      const history = [...p.pathHistory];
+      let stepsBack = action.value;
+      while (stepsBack > 0 && history.length > 1) {
+        history.pop();
+        stepsBack--;
+      }
+      const newNode = history[history.length - 1];
       const newPlayers = state.players.map((pl, i) =>
-        i === state.currentPlayer ? { ...pl, position: newPos } : pl
+        i === state.currentPlayer ? { ...pl, currentNode: newNode, pathHistory: history } : pl
       );
       return {
         ...state,
@@ -398,6 +773,8 @@ function gameReducer(state, action) {
         diceValue: null,
         eliminatedOptions: [],
         timerExpired: false,
+        junctionChoices: null,
+        remainingSteps: 0,
         message: `${state.players[next].name}'s turn! Roll the dice!`,
       };
     }
@@ -417,232 +794,45 @@ function gameReducer(state, action) {
   }
 }
 
-// ──── ISOMETRIC SVG DECORATIONS ────
-function IsoPine({ x, y, s = 1 }) {
+// ──── FELT IMAGE DECORATION ────
+function FeltDecoration({ item }) {
+  const cfg = FELT_IMAGES[item.type];
+  if (!cfg) return null;
+  const s = item.scale || 1;
+  const w = cfg.w * s;
+  const h = cfg.h * s;
   return (
-    <g>
-      <ellipse cx={x + 5 * s} cy={y + 3 * s} rx={14 * s} ry={5 * s} fill="rgba(0,0,0,0.15)" />
-      <rect x={x - 2.5 * s} y={y - 28 * s} width={5 * s} height={30 * s} fill="#5a3a1a" />
-      <polygon points={`${x},${y - 55 * s} ${x - 18 * s},${y - 15 * s} ${x + 18 * s},${y - 15 * s}`} fill="#1a4a10" />
-      <polygon points={`${x},${y - 62 * s} ${x - 14 * s},${y - 26 * s} ${x + 14 * s},${y - 26 * s}`} fill="#226818" />
-      <polygon points={`${x},${y - 68 * s} ${x - 10 * s},${y - 36 * s} ${x + 10 * s},${y - 36 * s}`} fill="#2a8020" />
-      <polygon points={`${x},${y - 72 * s} ${x - 5 * s},${y - 46 * s} ${x + 5 * s},${y - 46 * s}`} fill="#34942a" />
-    </g>
+    <image
+      href={cfg.src}
+      x={item.x - w / 2}
+      y={item.y - h}
+      width={w}
+      height={h}
+      opacity={0.92}
+    />
   );
 }
 
-function IsoOak({ x, y, s = 1 }) {
-  return (
-    <g>
-      <ellipse cx={x + 6 * s} cy={y + 4 * s} rx={20 * s} ry={7 * s} fill="rgba(0,0,0,0.15)" />
-      <rect x={x - 4 * s} y={y - 22 * s} width={8 * s} height={24 * s} fill="#6b4226" />
-      <line x1={x} y1={y - 18 * s} x2={x - 10 * s} y2={y - 28 * s} stroke="#6b4226" strokeWidth={3 * s} />
-      <line x1={x} y1={y - 16 * s} x2={x + 12 * s} y2={y - 26 * s} stroke="#6b4226" strokeWidth={3 * s} />
-      <circle cx={x - 6 * s} cy={y - 34 * s} r={12 * s} fill="#2a5016" />
-      <circle cx={x + 8 * s} cy={y - 32 * s} r={14 * s} fill="#1e4010" />
-      <circle cx={x} cy={y - 40 * s} r={13 * s} fill="#2d6018" />
-      <circle cx={x - 10 * s} cy={y - 38 * s} r={9 * s} fill="#3a7a24" />
-      <circle cx={x + 6 * s} cy={y - 44 * s} r={10 * s} fill="#347020" />
-      <circle cx={x - 2 * s} cy={y - 46 * s} r={5 * s} fill="#408a2a" opacity={0.6} />
-    </g>
-  );
-}
-
-function IsoBirch({ x, y, s = 1 }) {
-  return (
-    <g>
-      <ellipse cx={x + 4 * s} cy={y + 3 * s} rx={12 * s} ry={4 * s} fill="rgba(0,0,0,0.12)" />
-      <rect x={x - 2 * s} y={y - 38 * s} width={4 * s} height={40 * s} fill="#e8e0d0" />
-      <rect x={x - 1.5 * s} y={y - 30 * s} width={3 * s} height={4 * s} fill="#a09080" rx={1} />
-      <rect x={x - 1 * s} y={y - 18 * s} width={2 * s} height={3 * s} fill="#a09080" rx={1} />
-      <rect x={x - 1.5 * s} y={y - 8 * s} width={3 * s} height={3 * s} fill="#a09080" rx={1} />
-      <line x1={x} y1={y - 32 * s} x2={x - 8 * s} y2={y - 40 * s} stroke="#e8e0d0" strokeWidth={2 * s} />
-      <line x1={x} y1={y - 28 * s} x2={x + 9 * s} y2={y - 36 * s} stroke="#e8e0d0" strokeWidth={2 * s} />
-      <circle cx={x - 4 * s} cy={y - 42 * s} r={8 * s} fill="#5aaa38" opacity={0.8} />
-      <circle cx={x + 5 * s} cy={y - 38 * s} r={9 * s} fill="#4a9830" opacity={0.8} />
-      <circle cx={x} cy={y - 46 * s} r={7 * s} fill="#68b840" opacity={0.7} />
-      <circle cx={x - 6 * s} cy={y - 36 * s} r={5 * s} fill="#78c848" opacity={0.5} />
-    </g>
-  );
-}
-
-function IsoRock({ x, y, s = 1 }) {
-  return (
-    <g>
-      <ellipse cx={x + 3 * s} cy={y + 2 * s} rx={10 * s} ry={4 * s} fill="rgba(0,0,0,0.12)" />
-      <path d={`M${x - 10 * s},${y} L${x - 8 * s},${y - 8 * s} L${x - 2 * s},${y - 12 * s} L${x + 6 * s},${y - 10 * s} L${x + 10 * s},${y - 4 * s} L${x + 8 * s},${y} Z`} fill="#808088" />
-      <path d={`M${x - 8 * s},${y - 8 * s} L${x - 2 * s},${y - 12 * s} L${x + 6 * s},${y - 10 * s} L${x + 2 * s},${y - 6 * s} Z`} fill="#9898a0" />
-      <ellipse cx={x - 2 * s} cy={y - 10 * s} rx={4 * s} ry={2 * s} fill="#3a6a22" opacity={0.5} />
-    </g>
-  );
-}
-
-function IsoBush({ x, y, s = 1 }) {
-  return (
-    <g>
-      <ellipse cx={x + 3 * s} cy={y + 2 * s} rx={10 * s} ry={4 * s} fill="rgba(0,0,0,0.1)" />
-      <ellipse cx={x - 3 * s} cy={y - 4 * s} rx={8 * s} ry={6 * s} fill="#2a5a18" />
-      <ellipse cx={x + 4 * s} cy={y - 5 * s} rx={9 * s} ry={7 * s} fill="#1e4a12" />
-      <ellipse cx={x} cy={y - 8 * s} rx={7 * s} ry={5 * s} fill="#347020" />
-      <circle cx={x - 4 * s} cy={y - 6 * s} r={2 * s} fill="#c04050" />
-      <circle cx={x + 3 * s} cy={y - 8 * s} r={1.5 * s} fill="#c04050" />
-    </g>
-  );
-}
-
-function IsoMushroom({ x, y }) {
-  return (
-    <g>
-      <rect x={x - 1.5} y={y - 6} width={3} height={6} fill="#e8ddd0" />
-      <ellipse cx={x} cy={y - 7} rx={6} ry={4} fill="#c04040" />
-      <ellipse cx={x} cy={y - 8} rx={4} ry={2.5} fill="#d05050" />
-      <circle cx={x - 2} cy={y - 8} r={1} fill="#f0e0e0" />
-      <circle cx={x + 2} cy={y - 9} r={0.8} fill="#f0e0e0" />
-      <rect x={x + 4} y={y - 4} width={2} height={4} fill="#e8ddd0" />
-      <ellipse cx={x + 5} cy={y - 5} rx={3.5} ry={2.5} fill="#b87830" />
-    </g>
-  );
-}
-
-function IsoFlowers({ x, y, color = "#e080a0" }) {
-  return (
-    <g>
-      <line x1={x - 3} y1={y} x2={x - 3} y2={y - 7} stroke="#3a6b1e" strokeWidth={1.5} />
-      <line x1={x + 3} y1={y} x2={x + 3} y2={y - 9} stroke="#3a6b1e" strokeWidth={1.5} />
-      <line x1={x} y1={y - 1} x2={x} y2={y - 8} stroke="#3a6b1e" strokeWidth={1.5} />
-      <circle cx={x - 3} cy={y - 8} r={2.5} fill={color} />
-      <circle cx={x + 3} cy={y - 10} r={3} fill={color} />
-      <circle cx={x} cy={y - 9} r={2} fill={color} opacity={0.8} />
-      <circle cx={x - 3} cy={y - 8} r={1} fill="#ffdd40" />
-      <circle cx={x + 3} cy={y - 10} r={1.2} fill="#ffdd40" />
-      <circle cx={x} cy={y - 9} r={0.8} fill="#ffdd40" />
-    </g>
-  );
-}
-
-function IsoLog({ x, y, angle = 0 }) {
-  return (
-    <g transform={`translate(${x},${y}) rotate(${angle})`}>
-      <ellipse cx={3} cy={2} rx={18} ry={5} fill="rgba(0,0,0,0.1)" />
-      <rect x={-16} y={-5} width={32} height={8} rx={4} fill="#6b4226" />
-      <rect x={-16} y={-5} width={32} height={4} rx={4} fill="#7a5230" />
-      <ellipse cx={-16} cy={-1} rx={4} ry={4} fill="#5a3a1a" />
-      <ellipse cx={-16} cy={-1} rx={3} ry={3} fill="#7a5a30" />
-      <circle cx={-16} cy={-1} r={1} fill="#503018" />
-      <ellipse cx={-8} cy={-4} rx={3} ry={1.5} fill="#2a5a18" opacity={0.6} />
-    </g>
-  );
-}
-
-function IsoRabbit({ x, y }) {
-  return (
-    <g>
-      <ellipse cx={x} cy={y} rx={5} ry={3} fill="#c0a888" />
-      <ellipse cx={x + 4} cy={y - 2} rx={3} ry={2.5} fill="#c8b090" />
-      <ellipse cx={x + 2} cy={y - 6} rx={1.2} ry={3.5} fill="#c0a888" />
-      <ellipse cx={x + 4} cy={y - 6} rx={1.2} ry={3.5} fill="#c0a888" />
-      <circle cx={x + 5} cy={y - 2.5} r={0.6} fill="#1a1a1a" />
-      <circle cx={x - 5} cy={y + 1} r={2} fill="#c8b898" />
-    </g>
-  );
-}
-
-function IsoDeer({ x, y }) {
-  return (
-    <g>
-      <ellipse cx={x} cy={y} rx={8} ry={4} fill="#b08050" />
-      <rect x={x - 5} y={y} width={2} height={8} fill="#906838" />
-      <rect x={x + 3} y={y} width={2} height={8} fill="#906838" />
-      <ellipse cx={x + 8} cy={y - 3} rx={3.5} ry={3} fill="#b88858" />
-      <circle cx={x + 10} cy={y - 4} r={0.6} fill="#1a1a1a" />
-      <line x1={x + 7} y1={y - 6} x2={x + 5} y2={y - 12} stroke="#906838" strokeWidth={1.2} />
-      <line x1={x + 5} y1={y - 12} x2={x + 3} y2={y - 14} stroke="#906838" strokeWidth={1} />
-      <line x1={x + 5} y1={y - 12} x2={x + 7} y2={y - 14} stroke="#906838" strokeWidth={1} />
-      <line x1={x + 9} y1={y - 6} x2={x + 11} y2={y - 12} stroke="#906838" strokeWidth={1.2} />
-      <line x1={x + 11} y1={y - 12} x2={x + 9} y2={y - 14} stroke="#906838" strokeWidth={1} />
-      <line x1={x + 11} y1={y - 12} x2={x + 13} y2={y - 14} stroke="#906838" strokeWidth={1} />
-    </g>
-  );
-}
-
-function IsoFox({ x, y }) {
-  return (
-    <g>
-      <ellipse cx={x} cy={y} rx={6} ry={3.5} fill="#d07030" />
-      <ellipse cx={x + 6} cy={y - 2} rx={3.5} ry={3} fill="#d07030" />
-      <polygon points={`${x + 5},${y - 5} ${x + 4},${y - 9} ${x + 7},${y - 5}`} fill="#d07030" />
-      <polygon points={`${x + 8},${y - 5} ${x + 7},${y - 9} ${x + 10},${y - 5}`} fill="#d07030" />
-      <ellipse cx={x + 7} cy={y - 1} rx={2} ry={1.5} fill="#f0e0d0" />
-      <circle cx={x + 8} cy={y - 3} r={0.5} fill="#1a1a1a" />
-      <path d={`M${x - 6},${y} Q${x - 10},${y - 4} ${x - 8},${y - 6}`} stroke="#e08040" strokeWidth={2} fill="none" />
-      <circle cx={x - 8} cy={y - 6} r={1.5} fill="#f0e0d0" />
-    </g>
-  );
-}
-
-function IsoOwl({ x, y }) {
-  return (
-    <g>
-      <ellipse cx={x} cy={y} rx={5} ry={6} fill="#8a7060" />
-      <ellipse cx={x} cy={y - 4} rx={4.5} ry={4} fill="#9a8070" />
-      <circle cx={x - 2} cy={y - 5} r={2} fill="#f0e8d0" />
-      <circle cx={x + 2} cy={y - 5} r={2} fill="#f0e8d0" />
-      <circle cx={x - 2} cy={y - 5} r={1} fill="#1a1a1a" />
-      <circle cx={x + 2} cy={y - 5} r={1} fill="#1a1a1a" />
-      <polygon points={`${x},${y - 3.5} ${x - 1},${y - 2.5} ${x + 1},${y - 2.5}`} fill="#d0a040" />
-      <polygon points={`${x - 4},${y - 7} ${x - 2},${y - 8} ${x - 3},${y - 5}`} fill="#7a6050" />
-      <polygon points={`${x + 4},${y - 7} ${x + 2},${y - 8} ${x + 3},${y - 5}`} fill="#7a6050" />
-      <ellipse cx={x} cy={y + 2} rx={3} ry={1.5} fill="#786050" />
-    </g>
-  );
-}
-
-function DecoElement({ item }) {
-  switch (item.type) {
-    case "pine": return <IsoPine x={item.x} y={item.y} s={item.scale} />;
-    case "oak": return <IsoOak x={item.x} y={item.y} s={item.scale} />;
-    case "birch": return <IsoBirch x={item.x} y={item.y} s={item.scale} />;
-    case "rock": return <IsoRock x={item.x} y={item.y} s={item.scale} />;
-    case "bush": return <IsoBush x={item.x} y={item.y} s={item.scale} />;
-    case "mushroom": return <IsoMushroom x={item.x} y={item.y} />;
-    case "flowers": return <IsoFlowers x={item.x} y={item.y} color={item.color} />;
-    case "log": return <IsoLog x={item.x} y={item.y} angle={item.angle} />;
-    case "rabbit": return <IsoRabbit x={item.x} y={item.y} />;
-    case "deer": return <IsoDeer x={item.x} y={item.y} />;
-    case "fox": return <IsoFox x={item.x} y={item.y} />;
-    case "owl": return <IsoOwl x={item.x} y={item.y} />;
-    default: return null;
-  }
-}
-
-// ──── GAME BOARD ────
+// ──── GAME BOARD (MAZE) ────
 function GameBoard({ spaces, players, currentPlayer }) {
   return (
     <svg viewBox="0 0 1800 1100" style={{ width: "100%", height: "100%" }}>
       <defs>
-        <linearGradient id="forestGround" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="#1a3a10" />
-          <stop offset="40%" stopColor="#1e4214" />
-          <stop offset="100%" stopColor="#2a5a20" />
-        </linearGradient>
-        <pattern id="grassTex" width="24" height="24" patternUnits="userSpaceOnUse">
-          <rect width="24" height="24" fill="transparent" />
-          <circle cx="4" cy="6" r="0.8" fill="#245018" opacity="0.4" />
-          <circle cx="16" cy="3" r="0.6" fill="#1e4212" opacity="0.3" />
-          <circle cx="10" cy="14" r="0.7" fill="#2a5a1a" opacity="0.35" />
-          <circle cx="20" cy="18" r="0.5" fill="#1e4816" opacity="0.3" />
-          <circle cx="6" cy="20" r="0.8" fill="#285a1e" opacity="0.25" />
+        <pattern id="woodGrain" width="200" height="200" patternUnits="userSpaceOnUse">
+          <rect width="200" height="200" fill="transparent" />
+          <line x1="0" y1="18" x2="200" y2="20" stroke="#bfae88" strokeWidth="0.8" opacity="0.2" />
+          <line x1="0" y1="52" x2="200" y2="50" stroke="#bfae88" strokeWidth="0.5" opacity="0.18" />
+          <line x1="0" y1="88" x2="200" y2="90" stroke="#bfae88" strokeWidth="0.7" opacity="0.15" />
+          <line x1="0" y1="125" x2="200" y2="123" stroke="#bfae88" strokeWidth="0.4" opacity="0.2" />
+          <line x1="0" y1="160" x2="200" y2="162" stroke="#bfae88" strokeWidth="0.6" opacity="0.16" />
+          <line x1="0" y1="190" x2="200" y2="188" stroke="#bfae88" strokeWidth="0.5" opacity="0.12" />
         </pattern>
-        <radialGradient id="forestLight" cx="0.25" cy="0.15" r="0.7">
-          <stop offset="0%" stopColor="rgba(255,255,200,0.08)" />
-          <stop offset="100%" stopColor="transparent" />
+        <radialGradient id="woodVignette" cx="0.5" cy="0.5" r="0.7">
+          <stop offset="0%" stopColor="transparent" />
+          <stop offset="100%" stopColor="rgba(80,60,40,0.15)" />
         </radialGradient>
-        <radialGradient id="forestMist" cx="0.6" cy="0.9" r="0.5">
-          <stop offset="0%" stopColor="rgba(150,180,160,0.06)" />
-          <stop offset="100%" stopColor="transparent" />
-        </radialGradient>
-        <filter id="glow">
-          <feGaussianBlur stdDeviation="3" result="blur" />
+        <filter id="softShadow">
+          <feGaussianBlur stdDeviation="2" result="blur" />
           <feMerge>
             <feMergeNode in="blur" />
             <feMergeNode in="SourceGraphic" />
@@ -650,96 +840,134 @@ function GameBoard({ spaces, players, currentPlayer }) {
         </filter>
       </defs>
 
-      {/* Ground */}
-      <rect width="1800" height="1100" fill="url(#forestGround)" />
-      <rect width="1800" height="1100" fill="url(#grassTex)" />
+      {/* Wood background */}
+      <rect width="1800" height="1100" fill="#c8b898" />
+      <rect width="1800" height="1100" fill="url(#woodGrain)" />
+
+      {/* Felt stream ribbon */}
+      <g opacity={0.55}>
+        <path d={STREAM_PATH_D2} stroke="#7aaccc" strokeWidth={20} fill="none" strokeLinecap="round" strokeLinejoin="round" />
+        <path d={STREAM_PATH_D2} stroke="#8abcda" strokeWidth={14} fill="none" strokeLinecap="round" strokeLinejoin="round" />
+        <path d={STREAM_PATH_D2} stroke="#9acce8" strokeWidth={3} fill="none" strokeLinecap="round" strokeDasharray="5,8" style={{ animation: "streamFlow 2.5s linear infinite" }} />
+      </g>
+      {/* Felt pond */}
+      <g opacity={0.5}>
+        <ellipse cx={155} cy={740} rx={50} ry={30} fill="#7aaccc" />
+        <ellipse cx={155} cy={740} rx={38} ry={22} fill="#8abcda" />
+        <ellipse cx={150} cy={736} rx={16} ry={9} fill="#9acce8" opacity={0.5} />
+      </g>
 
       {/* Background decorations (behind path) */}
       {DECO.filter(d => d.y < 500).map((item, i) => (
-        <DecoElement key={`dbg${i}`} item={item} />
+        <FeltDecoration key={`dbg${i}`} item={item} />
       ))}
 
-      {/* Trail path — wider, clearer, with edge markings */}
-      <path d={TRAIL_PATH_D} stroke="#1a1008" strokeWidth={44} fill="none" strokeLinecap="round" strokeLinejoin="round" opacity={0.35} />
-      <path d={TRAIL_PATH_D} stroke="#4a3018" strokeWidth={38} fill="none" strokeLinecap="round" strokeLinejoin="round" />
-      <path d={TRAIL_PATH_D} stroke="#6a4820" strokeWidth={32} fill="none" strokeLinecap="round" strokeLinejoin="round" />
-      <path d={TRAIL_PATH_D} stroke="#8a6030" strokeWidth={24} fill="none" strokeLinecap="round" strokeLinejoin="round" />
-      <path d={TRAIL_PATH_D} stroke="#a07838" strokeWidth={3} fill="none" strokeLinecap="round" strokeLinejoin="round" strokeDasharray="8,14" opacity={0.35} />
+      {/* Maze trail ribbons — one per edge */}
+      {MAZE_EDGE_PATHS.map((d, i) => (
+        <g key={`trail${i}`}>
+          <path d={d} stroke="rgba(100,80,50,0.2)" strokeWidth={36} fill="none" strokeLinecap="round" strokeLinejoin="round" />
+          <path d={d} stroke="#8a7050" strokeWidth={30} fill="none" strokeLinecap="round" strokeLinejoin="round" />
+          <path d={d} stroke="#a08060" strokeWidth={24} fill="none" strokeLinecap="round" strokeLinejoin="round" />
+          <path d={d} stroke="#b89870" strokeWidth={18} fill="none" strokeLinecap="round" strokeLinejoin="round" />
+          {/* Stitch marks */}
+          <path d={d} stroke="#c8a878" strokeWidth={1.2} fill="none" strokeLinecap="round" strokeDasharray="4,7" />
+        </g>
+      ))}
 
       {/* Start / Finish markers */}
       <g>
-        <text x={spaces[0].x} y={spaces[0].y + 28} textAnchor="middle" fontSize="8" fill="#80e050" fontFamily="'Press Start 2P'" opacity={0.8}>START</text>
-        <text x={spaces[NUM_SPACES - 1].x} y={spaces[NUM_SPACES - 1].y - 28} textAnchor="middle" fontSize="8" fill="#f0c040" fontFamily="'Press Start 2P'" opacity={0.8}>FINISH</text>
+        <text x={spaces[0].x} y={spaces[0].y + 28} textAnchor="middle" fontSize="8" fill="#5a8a38" fontFamily="'Press Start 2P'" opacity={0.9}>START</text>
+        <text x={spaces[NUM_SPACES - 1].x} y={spaces[NUM_SPACES - 1].y + 28} textAnchor="middle" fontSize="8" fill="#c89030" fontFamily="'Press Start 2P'" opacity={0.9}>FINISH</text>
       </g>
 
       {/* Mid decorations */}
       {DECO.filter(d => d.y >= 500 && d.y < 800).map((item, i) => (
-        <DecoElement key={`dmid${i}`} item={item} />
+        <FeltDecoration key={`dmid${i}`} item={item} />
       ))}
 
-      {/* Board spaces */}
+      {/* Board spaces — rounded felt tiles */}
       {spaces.map((s) => {
         const isHub = s.isHub;
-        const r = isHub ? 22 : 14;
+        const isJunction = s.isJunction;
+        const hw = isHub ? 28 : isJunction ? 24 : 18;
+        const hh = isHub ? 20 : isJunction ? 18 : 14;
+        const rx = 6;
         return (
-          <g key={`sp${s.id}`}>
-            {/* Shadow */}
-            <ellipse cx={s.x + 3} cy={s.y + 3} rx={r} ry={r * 0.6} fill="rgba(0,0,0,0.25)" />
-            {/* Base circle */}
-            <circle
-              cx={s.x}
-              cy={s.y}
-              r={r}
-              fill={CAT_COLORS[s.catIndex]}
-              stroke={isHub ? "#f0c040" : "#1a1a1a"}
-              strokeWidth={isHub ? 3 : 2}
-              opacity={0.9}
+          <g key={`sp${s.id}`} transform={`translate(${s.x}, ${s.y})`}>
+            {/* Soft shadow */}
+            <rect x={-hw - 1} y={-hh + 2} width={(hw + 1) * 2} height={hh * 2} rx={rx} fill="rgba(60,40,20,0.3)" />
+            {/* Cream border for contrast */}
+            <rect x={-hw - 3} y={-hh - 3} width={(hw + 3) * 2} height={(hh + 3) * 2} rx={rx + 2} fill="#f0e8d8" opacity={0.85} />
+            {/* Base felt tile */}
+            <rect
+              x={-hw}
+              y={-hh}
+              width={hw * 2}
+              height={hh * 2}
+              rx={rx}
+              fill={isJunction ? "#8a6828" : CAT_COLORS[s.catIndex]}
+              stroke={isHub ? "#c89030" : isJunction ? "#c89030" : "#5a4a35"}
+              strokeWidth={isHub ? 3.5 : isJunction ? 3 : 2.5}
+              strokeDasharray={isHub || isJunction ? "none" : "4,3"}
             />
-            {/* Inner highlight */}
-            <circle
-              cx={s.x - r * 0.2}
-              cy={s.y - r * 0.2}
-              r={r * 0.5}
-              fill="rgba(255,255,255,0.12)"
-            />
-            {/* Hub glow */}
+            {/* Inner felt highlight */}
+            <rect x={-hw + 4} y={-hh + 3} width={(hw - 4) * 2} height={(hh - 3) * 2} rx={rx - 2} fill="rgba(255,255,255,0.1)" />
+            {/* Hub stitch ring */}
             {isHub && (
-              <circle cx={s.x} cy={s.y} r={r + 4} fill="none" stroke="#f0c040" strokeWidth={1.5} opacity={0.4} filter="url(#glow)" />
+              <rect x={-hw - 6} y={-hh - 6} width={(hw + 6) * 2} height={(hh + 6) * 2} rx={rx + 4} fill="none" stroke="#c89030" strokeWidth={2.5} strokeDasharray="5,4" opacity={0.6} />
             )}
-            {/* Space number */}
+            {/* Space content (un-rotated not needed since no rotation) */}
             <text
-              x={s.x}
-              y={isHub ? s.y - 4 : s.y + 2}
+              x={0}
+              y={isHub ? -3 : 3}
               textAnchor="middle"
-              fontSize={isHub ? "7" : "6"}
-              fill="rgba(255,255,255,0.75)"
+              fontSize={isHub ? "9" : isJunction ? "8" : "7"}
+              fill="#fff"
+              stroke="#3a2a1a"
+              strokeWidth={2.5}
+              paintOrder="stroke"
               fontFamily="'Press Start 2P'"
+              fontWeight="bold"
               style={{ pointerEvents: "none" }}
             >
-              {s.id + 1}
+              {isJunction ? "\u{1F6A9}" : s.id + 1}
             </text>
             {/* Category icon */}
             <text
-              x={s.x}
-              y={isHub ? s.y + 12 : s.y + 12}
+              x={0}
+              y={isHub ? 14 : 14}
               textAnchor="middle"
-              fontSize={isHub ? "14" : "9"}
+              fontSize={isHub ? "15" : isJunction ? "12" : "10"}
               style={{ pointerEvents: "none" }}
             >
-              {CAT_ICONS[s.catIndex]}
+              {isJunction ? "\u{2194}\u{FE0F}" : CAT_ICONS[s.catIndex]}
             </text>
             {/* Hub name */}
             {isHub && (
               <text
-                x={s.x}
-                y={s.y + r + 14}
+                x={0}
+                y={hh + 16}
                 textAnchor="middle"
                 fontSize="5"
-                fill="#f0c040"
+                fill="#8a6828"
                 fontFamily="'Press Start 2P'"
                 style={{ pointerEvents: "none" }}
               >
                 {HUB_NAMES[s.hubIndex]}
+              </text>
+            )}
+            {/* Junction signpost label */}
+            {isJunction && (
+              <text
+                x={0}
+                y={hh + 14}
+                textAnchor="middle"
+                fontSize="4.5"
+                fill="#8a6828"
+                fontFamily="'Press Start 2P'"
+                style={{ pointerEvents: "none" }}
+              >
+                FORK
               </text>
             )}
           </g>
@@ -748,84 +976,63 @@ function GameBoard({ spaces, players, currentPlayer }) {
 
       {/* Foreground decorations */}
       {DECO.filter(d => d.y >= 800).map((item, i) => (
-        <DecoElement key={`dfg${i}`} item={item} />
+        <FeltDecoration key={`dfg${i}`} item={item} />
       ))}
 
-      {/* Light overlay */}
-      <rect width="1800" height="1100" fill="url(#forestLight)" />
-      <rect width="1800" height="1100" fill="url(#forestMist)" />
+      {/* Vignette overlay */}
+      <rect width="1800" height="1100" fill="url(#woodVignette)" />
 
-      {/* Light rays */}
-      <g opacity={0.04}>
-        <polygon points="200,0 280,0 400,1100 300,1100" fill="#ffffcc" />
-        <polygon points="600,0 660,0 780,1100 700,1100" fill="#ffffcc" />
-        <polygon points="1050,0 1100,0 1220,1100 1150,1100" fill="#ffffcc" />
-        <polygon points="1450,0 1500,0 1620,1100 1550,1100" fill="#ffffcc" />
-      </g>
-
-      {/* Firefly particles */}
-      {[
-        { cx: 200, cy: 300, delay: 0 }, { cx: 900, cy: 200, delay: 1 },
-        { cx: 500, cy: 600, delay: 2 }, { cx: 1300, cy: 400, delay: 0.5 },
-        { cx: 350, cy: 800, delay: 1.5 }, { cx: 1100, cy: 700, delay: 2.5 },
-        { cx: 1500, cy: 300, delay: 0.8 }, { cx: 700, cy: 950, delay: 1.8 },
-      ].map((p, i) => (
-        <circle
-          key={`ff${i}`}
-          cx={p.cx}
-          cy={p.cy}
-          r={2}
-          fill="#f0e060"
-          opacity={0.6}
-          style={{ animation: `sparkle 3s ${p.delay}s infinite ease-in-out` }}
-        />
+      {/* Falling leaves */}
+      {FALLING_LEAVES.map((leaf, i) => (
+        <g key={`leaf${i}`} transform={`translate(${leaf.x}, 0)`}>
+          <g style={{ animation: `fallLeaf ${leaf.duration}s ${leaf.delay}s infinite linear` }}>
+            <path
+              d="M0,-3 C-2,-1 -2,3 0,5 C2,3 2,-1 0,-3Z"
+              fill={leaf.color}
+              opacity={0.7}
+              transform={`scale(${leaf.size * 3.5})`}
+            />
+          </g>
+        </g>
       ))}
 
       {/* Players */}
       {players.map((p, i) => {
-        const space = spaces[p.position];
+        const space = spaces.find(s => s.id === p.currentNode);
         if (!space) return null;
-        const sameSpacePlayers = players.filter(pl => pl.position === p.position);
+        const sameSpacePlayers = players.filter(pl => pl.currentNode === p.currentNode);
         const myIdx = sameSpacePlayers.findIndex(pl => pl.id === p.id);
         const angle = (myIdx / sameSpacePlayers.length) * Math.PI * 2;
-        const spread = sameSpacePlayers.length > 1 ? 16 : 0;
+        const spread = sameSpacePlayers.length > 1 ? 24 : 0;
         const offsetX = Math.cos(angle) * spread;
         const offsetY = Math.sin(angle) * spread * 0.5;
-        const px = space.x + offsetX;
-        const py = space.y + offsetY - 20;
+        const tx = space.x + offsetX;
+        const ty = space.y + offsetY;
         const isCurr = i === currentPlayer;
         return (
-          <g key={`pl${p.id}`} style={{ transition: "transform 0.6s ease" }}>
+          <g key={`pl${p.id}`} transform={`translate(${tx}, ${ty})`}>
             {/* Shadow */}
-            <ellipse cx={px} cy={space.y + offsetY + 4} rx={10} ry={4} fill="rgba(0,0,0,0.2)" />
-            {/* Token body (diamond shape for isometric feel) */}
-            <polygon
-              points={`${px},${py - 14} ${px + 13},${py} ${px},${py + 10} ${px - 13},${py}`}
-              fill={p.color}
-              stroke={isCurr ? "#f0c040" : p.accent}
-              strokeWidth={isCurr ? 3 : 2}
-            />
-            {/* Inner sheen */}
-            <polygon
-              points={`${px},${py - 10} ${px + 8},${py} ${px},${py + 6} ${px - 8},${py}`}
-              fill="none"
-              stroke="rgba(255,255,255,0.15)"
-              strokeWidth={1.5}
-            />
+            <ellipse cx={0} cy={6} rx={18} ry={7} fill="rgba(0,0,0,0.2)" />
+            {/* Token body (rounded felt pawn) */}
+            <ellipse cx={0} cy={-8} rx={16} ry={6} fill={p.color} stroke={isCurr ? "#f0c040" : p.accent} strokeWidth={isCurr ? 3 : 2} />
+            <ellipse cx={0} cy={-30} rx={18} ry={18} fill={p.color} stroke={isCurr ? "#f0c040" : p.accent} strokeWidth={isCurr ? 3 : 2} />
+            <rect x={-16} y={-30} width={32} height={22} fill={p.color} />
+            {/* Stitch detail */}
+            <ellipse cx={0} cy={-30} rx={14} ry={14} fill="none" stroke="rgba(255,255,255,0.2)" strokeWidth={1.5} strokeDasharray="3,3" />
             {/* Emoji */}
-            <text x={px} y={py + 3} textAnchor="middle" fontSize="13" style={{ pointerEvents: "none" }}>
+            <text x={0} y={-24} textAnchor="middle" fontSize="20" style={{ pointerEvents: "none" }}>
               {p.emoji}
             </text>
             {/* Current player indicator */}
             {isCurr && (
               <g>
                 <polygon
-                  points={`${px - 4},${py - 22} ${px + 4},${py - 22} ${px},${py - 16}`}
+                  points="-5,-56 5,-56 0,-49"
                   fill="#f0c040"
                   style={{ animation: "bounce 1s infinite" }}
                 />
-                <rect x={px - 22} y={py - 36} width={44} height={12} fill="#f0c040" stroke="#1a1a1a" strokeWidth={1.5} rx={2} />
-                <text x={px} y={py - 27} textAnchor="middle" fontSize="5" fill="#1a1a1a" fontFamily="'Press Start 2P'" style={{ pointerEvents: "none" }}>
+                <rect x={-28} y={-72} width={56} height={16} fill="#c89030" stroke="#8a7a68" strokeWidth={1.5} rx={4} />
+                <text x={0} y={-61} textAnchor="middle" fontSize="6.5" fill="#f5edd8" fontFamily="'Press Start 2P'" style={{ pointerEvents: "none" }}>
                   {p.name}
                 </text>
               </g>
@@ -834,6 +1041,73 @@ function GameBoard({ spaces, players, currentPlayer }) {
         );
       })}
     </svg>
+  );
+}
+
+// ──── JUNCTION PICKER ────
+function JunctionPicker({ choices, playerName, onChoose, soundEnabled }) {
+  return (
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 120,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        background: "rgba(120,100,70,0.8)",
+        backdropFilter: "blur(4px)",
+        animation: "fadeIn 0.25s ease",
+      }}
+    >
+      <div
+        className="pixel-panel"
+        style={{
+          maxWidth: 460,
+          width: "94%",
+          padding: "24px 28px",
+          textAlign: "center",
+          animation: "slideUp 0.3s ease",
+          borderRadius: 8,
+        }}
+      >
+        <div style={{ fontSize: 28, marginBottom: 8 }}>{"\u{1F6A9}"}</div>
+        <h2 style={{ fontFamily: "'Press Start 2P'", fontSize: 13, color: "#8a6828", margin: "0 0 6px", textShadow: "2px 2px 0 rgba(80,60,40,0.2)" }}>
+          FORK IN THE PATH
+        </h2>
+        <p style={{ fontFamily: "var(--ui-font)", fontSize: 10, color: "#6a5a48", marginBottom: 18 }}>
+          {playerName}, choose your direction!
+        </p>
+        <div style={{ display: "flex", gap: 10, justifyContent: "center", flexWrap: "wrap" }}>
+          {choices.map((choice, i) => (
+            <button
+              key={i}
+              onClick={() => onChoose(choice.nextNode)}
+              className="pixel-btn pixel-btn-green"
+              style={{
+                fontSize: 10,
+                padding: "12px 20px",
+                minWidth: 100,
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                gap: 6,
+              }}
+            >
+              <span style={{ fontSize: 18 }}>
+                {choice.dirName === "Left" ? "\u{2B05}\u{FE0F}" : choice.dirName === "Right" ? "\u{27A1}\u{FE0F}" : "\u{2B06}\u{FE0F}"}
+              </span>
+              <span>{choice.dirName}</span>
+              {choice.hubAhead !== null && (
+                <span style={{ fontSize: 7, opacity: 0.8 }}>
+                  {CAT_ICONS[choice.hubAhead]} {HUB_NAMES[choice.hubAhead]}
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -856,11 +1130,11 @@ function PixelDice({ value, rolling, onRoll, disabled, size = 72 }) {
         width: size,
         height: size,
         padding: 0,
-        background: "#f0e8d0",
-        border: "4px solid #1a1a1a",
+        background: "#f5edd8",
+        border: "4px solid #8a7a68",
         cursor: disabled ? "not-allowed" : "pointer",
         opacity: disabled ? 0.5 : 1,
-        boxShadow: "inset -3px -3px 0 rgba(0,0,0,0.2), inset 3px 3px 0 rgba(255,255,255,0.3), 4px 4px 0 #1a1a1a",
+        boxShadow: "inset -2px -2px 0 rgba(0,0,0,0.1), inset 2px 2px 0 rgba(255,255,255,0.3), 3px 3px 0 rgba(80,60,40,0.25)",
         transition: "transform 0.1s",
         animation: rolling ? "rollDice 0.3s infinite linear" : "none",
         borderRadius: 6,
@@ -868,7 +1142,7 @@ function PixelDice({ value, rolling, onRoll, disabled, size = 72 }) {
     >
       <svg viewBox="0 0 100 100" style={{ width: "100%", height: "100%" }}>
         {(dotPositions[displayVal] || []).map(([cx, cy], i) => (
-          <circle key={i} cx={cx} cy={cy} r={9} fill="#1a1a2e" />
+          <circle key={i} cx={cx} cy={cy} r={9} fill="#5a4a35" />
         ))}
       </svg>
     </button>
@@ -885,8 +1159,8 @@ function FeatherDisplay({ feathers, size = 24, showLabels = false }) {
           style={{
             width: size,
             height: size,
-            background: has ? CAT_COLORS[i] : "rgba(100,100,120,0.3)",
-            border: `2px solid ${has ? "#f0c040" : "#404060"}`,
+            background: has ? CAT_COLORS[i] : "rgba(180,168,136,0.4)",
+            border: `2px solid ${has ? "#c89030" : "#b8a888"}`,
             borderRadius: "50%",
             display: "flex",
             alignItems: "center",
@@ -902,7 +1176,7 @@ function FeatherDisplay({ feathers, size = 24, showLabels = false }) {
         </div>
       ))}
       {showLabels && (
-        <span style={{ fontSize: "8px", color: "#8888a0", fontFamily: "var(--ui-font)", marginLeft: 4 }}>
+        <span style={{ fontSize: "8px", color: "#8a7a68", fontFamily: "var(--ui-font)", marginLeft: 4 }}>
           {feathers.filter(Boolean).length}/6
         </span>
       )}
@@ -942,21 +1216,21 @@ function QuestionTimer({ duration, onExpire, soundEnabled }) {
   return (
     <div style={{ marginBottom: 12 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
-        <span style={{ fontFamily: "var(--ui-font)", fontSize: "10px", color: danger ? "#ff4040" : warning ? "#f0c040" : "#80c080" }}>
+        <span style={{ fontFamily: "var(--ui-font)", fontSize: "10px", color: danger ? "#c05040" : warning ? "#c89030" : "#5a8a38" }}>
           TIME
         </span>
         <span
           style={{
             fontFamily: "'Press Start 2P'",
             fontSize: "12px",
-            color: danger ? "#ff4040" : warning ? "#f0c040" : "#80c080",
+            color: danger ? "#c05040" : warning ? "#c89030" : "#5a8a38",
             animation: danger ? "pulse 0.5s infinite" : "none",
           }}
         >
           {timeLeft}s
         </span>
       </div>
-      <div style={{ height: 8, background: "#1a1a2e", border: "2px solid #404060", borderRadius: 4 }}>
+      <div style={{ height: 8, background: "#d8c8a8", border: "2px solid #b8a888", borderRadius: 4 }}>
         <div
           className={`timer-bar ${danger ? "danger" : warning ? "warning" : ""}`}
           style={{ width: `${pct}%`, height: "100%", borderRadius: 2 }}
@@ -978,7 +1252,7 @@ function QuestionCard({ question, catIndex, selectedAnswer, answerRevealed, elim
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        background: "rgba(10,10,20,0.85)",
+        background: "rgba(120,100,70,0.75)",
         backdropFilter: "blur(4px)",
         animation: "fadeIn 0.25s ease",
       }}
@@ -1001,11 +1275,11 @@ function QuestionCard({ question, catIndex, selectedAnswer, answerRevealed, elim
             display: "flex",
             alignItems: "center",
             gap: 10,
-            borderBottom: "3px solid #1a1a1a",
+            borderBottom: "3px solid rgba(80,60,40,0.3)",
           }}
         >
           <span style={{ fontSize: 22 }}>{CAT_ICONS[catIndex]}</span>
-          <span style={{ fontFamily: "var(--ui-font)", fontSize: 14, color: "#fff", textShadow: "2px 2px 0 #1a1a1a" }}>
+          <span style={{ fontFamily: "var(--ui-font)", fontSize: 14, color: "#fff", textShadow: "1px 1px 0 rgba(0,0,0,0.3)" }}>
             {CATEGORIES[catIndex]}
           </span>
           {hints > 0 && !answerRevealed && (
@@ -1026,7 +1300,7 @@ function QuestionCard({ question, catIndex, selectedAnswer, answerRevealed, elim
           )}
 
           {/* Question */}
-          <p style={{ fontFamily: "var(--ui-font)", fontSize: 14, lineHeight: 1.7, color: "#e0d8c8", margin: "0 0 16px" }}>
+          <p style={{ fontFamily: "var(--ui-font)", fontSize: 14, lineHeight: 1.7, color: "#3a2a1a", margin: "0 0 16px" }}>
             {question.question}
           </p>
 
@@ -1037,16 +1311,16 @@ function QuestionCard({ question, catIndex, selectedAnswer, answerRevealed, elim
               if (isEliminated && !answerRevealed) return null;
               const isSelected = selectedAnswer === opt;
               const isCorrect = opt === question.answer;
-              let bg = "#303050";
-              let border = "#505078";
-              let textColor = "#e0d8c8";
+              let bg = "#e8dcc8";
+              let border = "#b8a888";
+              let textColor = "#3a2a1a";
               if (answerRevealed) {
-                if (isCorrect) { bg = "#2a6a1e"; border = "#4aaa2e"; textColor = "#fff"; }
-                else if (isSelected && !isCorrect) { bg = "#8a2020"; border = "#cc3030"; textColor = "#fff"; }
-                else { bg = "#252540"; border = "#404060"; textColor = "#666"; }
+                if (isCorrect) { bg = "#5a8a38"; border = "#4a7a2e"; textColor = "#fff"; }
+                else if (isSelected && !isCorrect) { bg = "#c05040"; border = "#a03830"; textColor = "#fff"; }
+                else { bg = "#ddd0ba"; border = "#c8b898"; textColor = "#8a7a68"; }
               } else if (isSelected) {
                 bg = CAT_COLORS[catIndex];
-                border = "#f0c040";
+                border = "#c89030";
                 textColor = "#fff";
               }
               return (
@@ -1065,7 +1339,7 @@ function QuestionCard({ question, catIndex, selectedAnswer, answerRevealed, elim
                     textAlign: "left",
                     transition: "all 0.15s",
                     borderRadius: 4,
-                    boxShadow: isSelected && !answerRevealed ? `0 0 8px ${CAT_COLORS[catIndex]}88` : "2px 2px 0 #1a1a1a",
+                    boxShadow: isSelected && !answerRevealed ? `0 0 8px ${CAT_COLORS[catIndex]}66` : "2px 2px 0 rgba(80,60,40,0.15)",
                     opacity: isEliminated ? 0.3 : 1,
                     animation: answerRevealed && isCorrect ? "correctFlash 0.4s" : answerRevealed && isSelected && !isCorrect ? "wrongFlash 0.4s" : "none",
                   }}
@@ -1085,13 +1359,13 @@ function QuestionCard({ question, catIndex, selectedAnswer, answerRevealed, elim
               style={{
                 marginTop: 14,
                 padding: "10px 12px",
-                background: "rgba(74,139,46,0.15)",
+                background: "rgba(90,138,56,0.1)",
                 borderLeft: `4px solid ${CAT_COLORS[catIndex]}`,
                 borderRadius: 4,
                 animation: "slideIn 0.3s ease",
               }}
             >
-              <p style={{ fontFamily: "var(--ui-font)", fontSize: 10, color: "#a0b890", lineHeight: 1.6, margin: 0 }}>
+              <p style={{ fontFamily: "var(--ui-font)", fontSize: 10, color: "#5a7a38", lineHeight: 1.6, margin: 0 }}>
                 {question.flavour}
               </p>
             </div>
@@ -1134,20 +1408,20 @@ function QuestionEditor({ questions, onUpdate, onClose }) {
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        background: "rgba(10,10,20,0.9)",
+        background: "rgba(120,100,70,0.8)",
       }}
     >
       <div
         className="pixel-panel"
         style={{ maxWidth: 680, width: "95%", maxHeight: "85vh", overflow: "hidden", display: "flex", flexDirection: "column", borderRadius: 8 }}
       >
-        <div style={{ padding: "10px 16px", borderBottom: "3px solid #1a1a1a", display: "flex", justifyContent: "space-between", alignItems: "center", background: "#1a3050" }}>
-          <span style={{ fontFamily: "var(--ui-font)", fontSize: 14, color: "#f0c040" }}>QUESTION EDITOR</span>
+        <div style={{ padding: "10px 16px", borderBottom: "3px solid #b8a888", display: "flex", justifyContent: "space-between", alignItems: "center", background: "#b8a888" }}>
+          <span style={{ fontFamily: "var(--ui-font)", fontSize: 14, color: "#8a6828" }}>QUESTION EDITOR</span>
           <button onClick={onClose} className="pixel-btn pixel-btn-red" style={{ fontSize: 8, padding: "4px 10px" }}>
             CLOSE
           </button>
         </div>
-        <div style={{ display: "flex", padding: "8px 10px", gap: 4, flexWrap: "wrap", borderBottom: "2px solid #404060" }}>
+        <div style={{ display: "flex", padding: "8px 10px", gap: 4, flexWrap: "wrap", borderBottom: "2px solid #b8a888" }}>
           {CATEGORIES.map((c, i) => (
             <button
               key={i}
@@ -1157,7 +1431,7 @@ function QuestionEditor({ questions, onUpdate, onClose }) {
               }}
               style={{
                 background: i === activeCat ? CAT_COLORS[i] : "#252540",
-                border: `2px solid ${CAT_COLORS[i]}`,
+                border: `2px solid ${CAT_COLORS[i]}88`,
                 padding: "3px 8px",
                 fontSize: 9,
                 cursor: "pointer",
@@ -1177,17 +1451,17 @@ function QuestionEditor({ questions, onUpdate, onClose }) {
               style={{
                 padding: "6px 10px",
                 marginBottom: 4,
-                background: "#252540",
-                border: "2px solid #404060",
+                background: "#e0d4be",
+                border: "2px solid #b8a888",
                 borderRadius: 3,
                 display: "flex",
                 justifyContent: "space-between",
                 alignItems: "center",
               }}
             >
-              <span style={{ fontFamily: "var(--ui-font)", fontSize: 9, color: "#c0b8a8", flex: 1 }}>
+              <span style={{ fontFamily: "var(--ui-font)", fontSize: 9, color: "#5a4a35", flex: 1 }}>
                 {q.question}
-                <span style={{ fontSize: 7, color: "#8888a0", marginLeft: 6 }}>[{q.difficulty}, {q.ageMin || "?"}+]</span>
+                <span style={{ fontSize: 7, color: "#8a7a68", marginLeft: 6 }}>[{q.difficulty}, {q.ageMin || "?"}+]</span>
               </span>
               <div style={{ display: "flex", gap: 4, marginLeft: 8 }}>
                 <button
@@ -1206,8 +1480,8 @@ function QuestionEditor({ questions, onUpdate, onClose }) {
               </div>
             </div>
           ))}
-          <div style={{ marginTop: 12, padding: 12, background: "#1a1a30", border: "2px dashed #505078", borderRadius: 4 }}>
-            <p style={{ fontFamily: "var(--ui-font)", fontSize: 10, color: "#f0c040", margin: "0 0 8px" }}>
+          <div style={{ marginTop: 12, padding: 12, background: "#e8dcc8", border: "2px dashed #b8a888", borderRadius: 4 }}>
+            <p style={{ fontFamily: "var(--ui-font)", fontSize: 10, color: "#8a6828", margin: "0 0 8px" }}>
               {editingQ !== null ? "EDIT QUESTION" : "ADD NEW QUESTION"}
             </p>
             <input
@@ -1278,9 +1552,9 @@ function QuestionEditor({ questions, onUpdate, onClose }) {
 const inputStyle = {
   width: "100%",
   padding: "7px 10px",
-  background: "#252540",
-  border: "2px solid #505078",
-  color: "#e0d8c8",
+  background: "#f0e8d8",
+  border: "2px solid #b8a888",
+  color: "#3a2a1a",
   fontFamily: "var(--ui-font)",
   fontSize: 10,
   boxSizing: "border-box",
@@ -1299,12 +1573,12 @@ function StatsScreen({ stats, onClose }) {
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        background: "rgba(10,10,20,0.9)",
+        background: "rgba(120,100,70,0.8)",
       }}
     >
       <div className="pixel-panel" style={{ maxWidth: 500, width: "92%", padding: 20, animation: "slideUp 0.3s ease", borderRadius: 8 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-          <span style={{ fontFamily: "'Press Start 2P'", fontSize: 12, color: "#f0c040" }}>STATS</span>
+          <span style={{ fontFamily: "'Press Start 2P'", fontSize: 12, color: "#8a6828" }}>STATS</span>
           <button onClick={onClose} className="pixel-btn pixel-btn-red" style={{ fontSize: 8, padding: "4px 10px" }}>
             CLOSE
           </button>
@@ -1316,14 +1590,14 @@ function StatsScreen({ stats, onClose }) {
             ["Correct Answers", stats.correctAnswers],
             ["Accuracy", stats.questionsAnswered > 0 ? `${Math.round((stats.correctAnswers / stats.questionsAnswered) * 100)}%` : "N/A"],
           ].map(([label, val], i) => (
-            <div key={i} style={{ background: "#1a1a30", border: "2px solid #404060", padding: "10px 12px", borderRadius: 4 }}>
-              <div style={{ fontFamily: "var(--ui-font)", fontSize: 8, color: "#8888a0", marginBottom: 4 }}>{label}</div>
-              <div style={{ fontFamily: "'Press Start 2P'", fontSize: 16, color: "#f0c040" }}>{val}</div>
+            <div key={i} style={{ background: "#e8dcc8", border: "2px solid #b8a888", padding: "10px 12px", borderRadius: 4 }}>
+              <div style={{ fontFamily: "var(--ui-font)", fontSize: 8, color: "#8a7a68", marginBottom: 4 }}>{label}</div>
+              <div style={{ fontFamily: "'Press Start 2P'", fontSize: 16, color: "#8a6828" }}>{val}</div>
             </div>
           ))}
         </div>
         <div style={{ marginTop: 14 }}>
-          <div style={{ fontFamily: "var(--ui-font)", fontSize: 9, color: "#8888a0", marginBottom: 8 }}>CATEGORY ACCURACY</div>
+          <div style={{ fontFamily: "var(--ui-font)", fontSize: 9, color: "#8a7a68", marginBottom: 8 }}>CATEGORY ACCURACY</div>
           {CATEGORIES.map((cat, i) => {
             const total = stats.categoryTotal?.[cat] || 0;
             const correct = stats.categoryCorrect?.[cat] || 0;
@@ -1331,11 +1605,11 @@ function StatsScreen({ stats, onClose }) {
             return (
               <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
                 <span style={{ fontSize: 12 }}>{CAT_ICONS[i]}</span>
-                <span style={{ fontFamily: "var(--ui-font)", fontSize: 8, color: "#c0b8a8", width: 60 }}>{CAT_LABELS_SHORT[i]}</span>
-                <div style={{ flex: 1, height: 10, background: "#1a1a30", border: "2px solid #404060", borderRadius: 3 }}>
+                <span style={{ fontFamily: "var(--ui-font)", fontSize: 8, color: "#5a4a35", width: 60 }}>{CAT_LABELS_SHORT[i]}</span>
+                <div style={{ flex: 1, height: 10, background: "#e8dcc8", border: "2px solid #b8a888", borderRadius: 3 }}>
                   <div style={{ width: `${pct}%`, height: "100%", background: CAT_COLORS[i], transition: "width 0.5s", borderRadius: 2 }} />
                 </div>
-                <span style={{ fontFamily: "'Press Start 2P'", fontSize: 7, color: "#e0d8c8", width: 35, textAlign: "right" }}>
+                <span style={{ fontFamily: "'Press Start 2P'", fontSize: 7, color: "#3a2a1a", width: 35, textAlign: "right" }}>
                   {total > 0 ? `${pct}%` : "--"}
                 </span>
               </div>
@@ -1358,12 +1632,12 @@ function SettingsPanel({ settings, onUpdate, onClose }) {
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        background: "rgba(10,10,20,0.9)",
+        background: "rgba(120,100,70,0.8)",
       }}
     >
       <div className="pixel-panel" style={{ maxWidth: 400, width: "90%", padding: 20, animation: "slideUp 0.3s ease", borderRadius: 8 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-          <span style={{ fontFamily: "'Press Start 2P'", fontSize: 12, color: "#f0c040" }}>SETTINGS</span>
+          <span style={{ fontFamily: "'Press Start 2P'", fontSize: 12, color: "#8a6828" }}>SETTINGS</span>
           <button onClick={onClose} className="pixel-btn pixel-btn-red" style={{ fontSize: 8, padding: "4px 10px" }}>
             CLOSE
           </button>
@@ -1410,8 +1684,8 @@ function SettingsPanel({ settings, onUpdate, onClose }) {
 }
 function SettingRow({ label, children }) {
   return (
-    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, padding: "8px 0", borderBottom: "1px solid #303050" }}>
-      <span style={{ fontFamily: "var(--ui-font)", fontSize: 10, color: "#c0b8a8" }}>{label}</span>
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, padding: "8px 0", borderBottom: "1px solid #c8b898" }}>
+      <span style={{ fontFamily: "var(--ui-font)", fontSize: 10, color: "#5a4a35" }}>{label}</span>
       {children}
     </div>
   );
@@ -1423,11 +1697,11 @@ function ToggleBtn({ active, onClick }) {
       style={{
         width: 48,
         height: 24,
-        background: active ? "#4a8b2e" : "#404060",
-        border: "3px solid #1a1a1a",
+        background: active ? "#5a8a38" : "#c8b898",
+        border: "3px solid #8a7a68",
         cursor: "pointer",
         position: "relative",
-        boxShadow: "2px 2px 0 #1a1a1a",
+        boxShadow: "2px 2px 0 rgba(80,60,40,0.25)",
         borderRadius: 12,
       }}
     >
@@ -1435,12 +1709,12 @@ function ToggleBtn({ active, onClick }) {
         style={{
           width: 16,
           height: 16,
-          background: active ? "#80e050" : "#808090",
+          background: active ? "#7ab850" : "#a09880",
           position: "absolute",
           top: 1,
           left: active ? 26 : 2,
           transition: "left 0.15s",
-          border: "2px solid #1a1a1a",
+          border: "2px solid #8a7a68",
           borderRadius: 8,
         }}
       />
@@ -1459,26 +1733,76 @@ function PenaltyOverlay({ rolling, value, playerName }) {
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        background: "rgba(10,10,20,0.92)",
+        background: "rgba(120,100,70,0.85)",
         animation: "fadeIn 0.2s ease",
       }}
     >
       <div className="pixel-panel" style={{ padding: "30px 40px", textAlign: "center", animation: "slideUp 0.3s ease", borderRadius: 8 }}>
-        <h2 style={{ fontFamily: "'Press Start 2P'", fontSize: 16, color: "#ff4040", margin: "0 0 8px", textShadow: "3px 3px 0 #1a1a1a" }}>
+        <h2 style={{ fontFamily: "'Press Start 2P'", fontSize: 16, color: "#c05040", margin: "0 0 8px", textShadow: "2px 2px 0 rgba(80,60,40,0.3)" }}>
           PENALTY!
         </h2>
-        <p style={{ fontFamily: "var(--ui-font)", fontSize: 11, color: "#c0b8a8", marginBottom: 16 }}>
+        <p style={{ fontFamily: "var(--ui-font)", fontSize: 11, color: "#5a4a35", marginBottom: 16 }}>
           {playerName} got it wrong! Rolling penalty...
         </p>
         <div style={{ display: "flex", justifyContent: "center", marginBottom: 16 }}>
           <PixelDice value={value} rolling={rolling} disabled size={80} />
         </div>
         {!rolling && value && (
-          <p style={{ fontFamily: "'Press Start 2P'", fontSize: 12, color: "#ff6060", animation: "pulse 0.5s infinite", margin: 0 }}>
+          <p style={{ fontFamily: "'Press Start 2P'", fontSize: 12, color: "#c05040", animation: "pulse 0.5s infinite", margin: 0 }}>
             Move back {value} space{value !== 1 ? "s" : ""}!
           </p>
         )}
       </div>
+    </div>
+  );
+}
+
+// ──── CONFETTI EFFECT ────
+function ConfettiEffect() {
+  return (
+    <div style={{ position: "fixed", inset: 0, pointerEvents: "none", zIndex: 300, overflow: "hidden" }}>
+      {Array.from({ length: 50 }, (_, i) => (
+        <div key={i} style={{
+          position: "absolute",
+          left: `${(i * 19.3) % 100}%`,
+          top: "-10px",
+          width: 6 + (i % 4) * 2,
+          height: 4 + (i % 3) * 2,
+          background: ["#c89030", "#c05040", "#5a8a38", "#4878a0", "#8a5898", "#d07030", "#3a8878"][i % 7],
+          animation: `confettiDrop ${1.8 + (i % 5) * 0.4}s ${(i * 0.07) % 2.5}s infinite ease-in`,
+          borderRadius: i % 2 === 0 ? "50%" : "2px",
+        }} />
+      ))}
+    </div>
+  );
+}
+
+// ──── TITLE BACKGROUND SCENE ────
+function TitleBackground() {
+  return (
+    <div style={{ position: "absolute", inset: 0, overflow: "hidden", pointerEvents: "none" }}>
+      {/* Scattered felt decorations */}
+      {[
+        { src: "/felt/pine-tree.png", x: "2%", y: "10%", w: 80, opacity: 0.2 },
+        { src: "/felt/pine-tree.png", x: "88%", y: "5%", w: 70, opacity: 0.18 },
+        { src: "/felt/birch-tree.png", x: "12%", y: "60%", w: 65, opacity: 0.15 },
+        { src: "/felt/birch-tree-2.png", x: "82%", y: "55%", w: 60, opacity: 0.17 },
+        { src: "/felt/fox.png", x: "6%", y: "75%", w: 55, opacity: 0.2 },
+        { src: "/felt/owl.png", x: "90%", y: "72%", w: 50, opacity: 0.18 },
+        { src: "/felt/mushroom-red.png", x: "20%", y: "85%", w: 40, opacity: 0.15 },
+        { src: "/felt/oak-leaf.png", x: "75%", y: "82%", w: 40, opacity: 0.14 },
+        { src: "/felt/rabbit.png", x: "92%", y: "30%", w: 50, opacity: 0.15 },
+        { src: "/felt/acorn.png", x: "4%", y: "40%", w: 35, opacity: 0.16 },
+        { src: "/felt/fern.png", x: "70%", y: "12%", w: 45, opacity: 0.13 },
+        { src: "/felt/snail.png", x: "25%", y: "15%", w: 40, opacity: 0.14 },
+        { src: "/felt/squirrel.png", x: "78%", y: "88%", w: 50, opacity: 0.16 },
+        { src: "/felt/hedgehog.png", x: "15%", y: "35%", w: 45, opacity: 0.13 },
+      ].map((d, i) => (
+        <img key={i} src={d.src} alt="" style={{
+          position: "absolute", left: d.x, top: d.y, width: d.w,
+          opacity: d.opacity, filter: "blur(1px)",
+        }} />
+      ))}
     </div>
   );
 }
@@ -1548,7 +1872,7 @@ export default function WoodlandTrivia() {
   const handleAnswer = (answer) => {
     const correct = answer === state.currentQuestion.answer;
     playSound(correct ? "correct" : "wrong");
-    const space = BOARD_SPACES[state.players[state.currentPlayer].position];
+    const space = MAZE_NODES[state.players[state.currentPlayer].currentNode];
     if (correct && space.isHub) {
       setTimeout(() => playSound("feather"), 400);
     }
@@ -1694,35 +2018,39 @@ export default function WoodlandTrivia() {
           flexDirection: "column",
           alignItems: "center",
           justifyContent: "center",
-          background: "linear-gradient(180deg, #0a0a1a 0%, #1a1a2e 50%, #0a1428 100%)",
+          background: "linear-gradient(180deg, #b8a880 0%, #c8b898 50%, #d0c0a0 100%)",
           fontFamily: "var(--ui-font)",
           padding: 16,
+          position: "relative",
+          overflow: "hidden",
         }}
       >
-        <div className="pixel-panel scanlines" style={{ padding: "28px 32px", maxWidth: 580, width: "100%", textAlign: "center", animation: "slideUp 0.5s ease", position: "relative", borderRadius: 8 }}>
+        <TitleBackground />
+        <div className="pixel-panel scanlines" style={{ padding: "28px 32px", maxWidth: 580, width: "100%", textAlign: "center", animation: "slideUp 0.5s ease", position: "relative", borderRadius: 8, zIndex: 1 }}>
           {/* Title */}
           <div style={{ fontSize: 32, marginBottom: 8, letterSpacing: 6 }}>
             {BIRD_EMOJIS.join("")}
           </div>
-          <h1 style={{ fontFamily: "'Press Start 2P'", fontSize: 18, color: "#f0c040", margin: "8px 0", textShadow: "3px 3px 0 #1a1a1a" }}>
+          <h1 style={{ fontFamily: "'Press Start 2P'", fontSize: 18, color: "#8a6828", margin: "8px 0", animation: "titleGlow 3s ease-in-out infinite" }}>
             WOODLAND TRIVIA
           </h1>
-          <p style={{ color: "#8888a0", fontSize: 10, margin: "4px 0 20px", fontStyle: "italic" }}>
+          <p style={{ color: "#8a7a68", fontSize: 10, margin: "4px 0 20px", fontStyle: "italic" }}>
             A cozy corvid board game in the whispering woods
           </p>
 
           {/* Rules */}
-          <div style={{ background: "#1a1a30", border: "2px solid #404060", padding: "10px 14px", marginBottom: 18, textAlign: "left", borderRadius: 4 }}>
-            <p style={{ fontSize: 8, color: "#a0a0b8", lineHeight: 1.8, margin: 0 }}>
-              Roll the dice and answer trivia as you wind through the woodland trail.
+          <div style={{ background: "#e8dcc8", border: "2px solid #b8a888", padding: "10px 14px", marginBottom: 18, textAlign: "left", borderRadius: 4 }}>
+            <p style={{ fontSize: 8, color: "#6a5a48", lineHeight: 1.8, margin: 0 }}>
+              Roll the dice and explore the branching woodland maze!
+              At forks in the path, choose your direction wisely.
               Land on golden HUB spaces and answer correctly to earn feathers.
-              Collect all 6 feathers to win! But beware — wrong answers mean
-              a penalty roll that sends you backwards!
+              Hubs are spread across different branches, so explore them all!
+              Collect all 6 feathers to win! Wrong answers mean a penalty roll backwards!
             </p>
           </div>
 
           {/* Player count */}
-          <p style={{ color: "#c0b8a8", fontSize: 11, margin: "0 0 10px" }}>HOW MANY PLAYERS?</p>
+          <p style={{ color: "#6a5a48", fontSize: 11, margin: "0 0 10px" }}>HOW MANY PLAYERS?</p>
           <div style={{ display: "flex", justifyContent: "center", gap: 8, marginBottom: 18 }}>
             {[2, 3, 4].map((n) => (
               <button
@@ -1754,7 +2082,7 @@ export default function WoodlandTrivia() {
                     fontSize: 24,
                     margin: "0 auto 6px",
                     border: `3px solid ${p.accent}`,
-                    boxShadow: "3px 3px 0 #1a1a1a",
+                    boxShadow: "3px 3px 0 rgba(80,60,40,0.25)",
                     borderRadius: 8,
                   }}
                 >
@@ -1772,9 +2100,9 @@ export default function WoodlandTrivia() {
                     width: 80,
                     textAlign: "center",
                     padding: "4px 4px",
-                    background: "#252540",
-                    border: "2px solid #505078",
-                    color: "#e0d8c8",
+                    background: "#e8dcc8",
+                    border: "2px solid #b8a888",
+                    color: "#3a2a1a",
                     fontFamily: "var(--ui-font)",
                     fontSize: 8,
                     outline: "none",
@@ -1783,7 +2111,7 @@ export default function WoodlandTrivia() {
                 />
                 {/* Age group selector — Child (8+) or Adult */}
                 <div style={{ marginTop: 4 }}>
-                  <span style={{ fontSize: 7, color: "#8888a0", display: "block", marginBottom: 2 }}>AGE GROUP</span>
+                  <span style={{ fontSize: 7, color: "#8a7a68", display: "block", marginBottom: 2 }}>AGE GROUP</span>
                   <div style={{ display: "flex", gap: 4 }}>
                     {[{ label: "Child", val: 8 }, { label: "Adult", val: 15 }].map(opt => (
                       <button
@@ -1795,9 +2123,9 @@ export default function WoodlandTrivia() {
                         }}
                         style={{
                           padding: "3px 8px",
-                          background: editAges[i] === opt.val ? "#4a8b2e" : "#252540",
-                          border: `2px solid ${editAges[i] === opt.val ? "#80e050" : "#505078"}`,
-                          color: editAges[i] === opt.val ? "#fff" : "#8888a0",
+                          background: editAges[i] === opt.val ? "#5a8a38" : "#e8dcc8",
+                          border: `2px solid ${editAges[i] === opt.val ? "#5a8a38" : "#b8a888"}`,
+                          color: editAges[i] === opt.val ? "#fff" : "#6a5a48",
                           fontFamily: "var(--ui-font)",
                           fontSize: 8,
                           cursor: "pointer",
@@ -1814,7 +2142,7 @@ export default function WoodlandTrivia() {
           </div>
 
           {/* Difficulty */}
-          <p style={{ color: "#c0b8a8", fontSize: 11, margin: "0 0 8px" }}>DIFFICULTY</p>
+          <p style={{ color: "#6a5a48", fontSize: 11, margin: "0 0 8px" }}>DIFFICULTY</p>
           <div style={{ display: "flex", justifyContent: "center", gap: 6, marginBottom: 18 }}>
             {Object.entries(DIFFICULTY_CONFIG).map(([key, cfg]) => (
               <button
@@ -1874,26 +2202,29 @@ export default function WoodlandTrivia() {
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          background: "linear-gradient(180deg, #0a0a1a 0%, #1a1a2e 100%)",
+          background: "linear-gradient(180deg, #b8a880 0%, #c8b898 100%)",
           fontFamily: "var(--ui-font)",
+          position: "relative",
+          overflow: "hidden",
         }}
       >
-        <div className="pixel-panel scanlines" style={{ padding: 40, textAlign: "center", animation: "slideUp 0.5s ease", position: "relative", maxWidth: 480, width: "92%", borderRadius: 8 }}>
+        <ConfettiEffect />
+        <div className="pixel-panel scanlines" style={{ padding: 40, textAlign: "center", animation: "slideUp 0.5s ease", position: "relative", maxWidth: 480, width: "92%", borderRadius: 8, zIndex: 1 }}>
           <div style={{ fontSize: 56, animation: "float 2s ease infinite" }}>{w.emoji}</div>
-          <h1 style={{ fontFamily: "'Press Start 2P'", fontSize: 16, color: "#f0c040", margin: "16px 0 8px", textShadow: "3px 3px 0 #1a1a1a" }}>
+          <h1 style={{ fontFamily: "'Press Start 2P'", fontSize: 16, color: "#8a6828", margin: "16px 0 8px", animation: "titleGlow 2s ease-in-out infinite" }}>
             {w.name} WINS!
           </h1>
-          <p style={{ color: "#8888a0", margin: "0 0 20px", fontSize: 10 }}>All six feathers collected!</p>
+          <p style={{ color: "#8a7a68", margin: "0 0 20px", fontSize: 10 }}>All six feathers collected!</p>
           <div style={{ display: "flex", justifyContent: "center", marginBottom: 20 }}>
             <FeatherDisplay feathers={w.feathers} size={32} />
           </div>
 
-          <div style={{ background: "#1a1a30", border: "2px solid #404060", padding: 12, marginBottom: 20, textAlign: "left", borderRadius: 4 }}>
-            <p style={{ fontFamily: "var(--ui-font)", fontSize: 8, color: "#8888a0", margin: "0 0 6px" }}>GAME SUMMARY</p>
-            <p style={{ fontSize: 9, color: "#c0b8a8", margin: "2px 0" }}>
+          <div style={{ background: "#e8dcc8", border: "2px solid #b8a888", padding: 12, marginBottom: 20, textAlign: "left", borderRadius: 4 }}>
+            <p style={{ fontFamily: "var(--ui-font)", fontSize: 8, color: "#8a7a68", margin: "0 0 6px" }}>GAME SUMMARY</p>
+            <p style={{ fontSize: 9, color: "#5a4a35", margin: "2px 0" }}>
               Questions answered: {stats.questionsAnswered}
             </p>
-            <p style={{ fontSize: 9, color: "#c0b8a8", margin: "2px 0" }}>
+            <p style={{ fontSize: 9, color: "#5a4a35", margin: "2px 0" }}>
               Accuracy: {stats.questionsAnswered > 0 ? `${Math.round((stats.correctAnswers / stats.questionsAnswered) * 100)}%` : "N/A"}
             </p>
           </div>
@@ -1935,7 +2266,7 @@ export default function WoodlandTrivia() {
         height: "100vh",
         display: "flex",
         flexDirection: "column",
-        background: "#0a0a1a",
+        background: "#c8b898",
         fontFamily: "var(--ui-font)",
         overflow: "hidden",
         userSelect: "none",
@@ -1948,15 +2279,15 @@ export default function WoodlandTrivia() {
           display: "flex",
           justifyContent: "space-between",
           alignItems: "center",
-          background: "linear-gradient(180deg, #16162e 0%, #12122a 100%)",
-          borderBottom: "3px solid #303050",
+          background: "linear-gradient(180deg, #a89878 0%, #b8a888 100%)",
+          borderBottom: "3px solid #8a7a68",
           flexShrink: 0,
           zIndex: 10,
         }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <span style={{ fontSize: 16 }}>{"\u{1F426}\u{200D}\u{2B1B}"}</span>
-          <span style={{ fontFamily: "'Press Start 2P'", fontSize: 9, color: "#f0c040", textShadow: "2px 2px 0 #1a1a1a" }}>
+          <span style={{ fontFamily: "'Press Start 2P'", fontSize: 9, color: "#f5edd8", textShadow: "1px 1px 0 #6a5a48" }}>
             WOODLAND TRIVIA
           </span>
         </div>
@@ -2032,9 +2363,10 @@ export default function WoodlandTrivia() {
       {/* ── HUD (bottom bar) ── */}
       <div
         style={{
-          padding: "8px 12px",
-          background: "linear-gradient(180deg, #12122a 0%, #0e0e22 100%)",
-          borderTop: "3px solid #303050",
+          padding: "10px 14px",
+          background: "linear-gradient(180deg, #b8a888 0%, #a89878 100%)",
+          borderTop: "3px solid #8a7a68",
+          boxShadow: "inset 0 2px 4px rgba(255,255,255,0.1), 0 -2px 6px rgba(80,60,40,0.15)",
           flexShrink: 0,
         }}
       >
@@ -2042,11 +2374,12 @@ export default function WoodlandTrivia() {
         <div
           style={{
             textAlign: "center",
-            marginBottom: 6,
-            padding: "6px 10px",
-            background: "#1a1a30",
-            border: "2px solid #404060",
-            borderRadius: 4,
+            marginBottom: 8,
+            padding: "8px 12px",
+            background: "linear-gradient(180deg, #f0e8d8 0%, #e8dcc8 100%)",
+            border: "2px solid #b8a888",
+            borderRadius: 6,
+            boxShadow: "inset 0 1px 3px rgba(0,0,0,0.08)",
           }}
         >
           <span
@@ -2054,11 +2387,11 @@ export default function WoodlandTrivia() {
               fontFamily: "var(--ui-font)",
               fontSize: 11,
               color: state.message.includes("Correct") || state.message.includes("earns")
-                ? "#80e050"
+                ? "#3a7a28"
                 : state.message.includes("Wrong") || state.message.includes("Time") || state.message.includes("back")
-                  ? "#ff6060"
-                  : "#f0c040",
-              textShadow: "1px 1px 0 #1a1a1a",
+                  ? "#b84838"
+                  : "#8a6828",
+              textShadow: "none",
             }}
           >
             {state.message}
@@ -2076,11 +2409,13 @@ export default function WoodlandTrivia() {
                   display: "flex",
                   alignItems: "center",
                   gap: 8,
-                  padding: "5px 10px",
-                  background: isCurr ? "rgba(240,192,64,0.12)" : "transparent",
-                  border: isCurr ? "2px solid #f0c040" : "2px solid transparent",
+                  padding: "6px 12px",
+                  background: isCurr ? "rgba(200,144,48,0.15)" : "rgba(240,228,208,0.6)",
+                  border: isCurr ? "2px solid #c89030" : "2px solid #b8a888",
                   borderRadius: 6,
                   transition: "all 0.3s",
+                  boxShadow: isCurr ? "0 0 10px rgba(200,144,48,0.2)" : "2px 2px 0 rgba(80,60,40,0.15)",
+                  animation: isCurr ? "activeGlow 2s infinite ease-in-out" : "none",
                 }}
               >
                 <div
@@ -2092,19 +2427,19 @@ export default function WoodlandTrivia() {
                     alignItems: "center",
                     justifyContent: "center",
                     fontSize: 18,
-                    border: `3px solid ${isCurr ? "#f0c040" : p.accent}`,
-                    boxShadow: "2px 2px 0 #1a1a1a",
+                    border: `3px solid ${isCurr ? "#c89030" : p.accent}`,
+                    boxShadow: "2px 2px 0 rgba(80,60,40,0.25)",
                     borderRadius: 6,
                   }}
                 >
                   {p.emoji}
                 </div>
                 <div>
-                  <div style={{ fontSize: 9, color: isCurr ? "#f0c040" : "#c0b8a8", fontWeight: "bold" }}>
+                  <div style={{ fontSize: 9, color: isCurr ? "#8a6828" : "#5a4a35", fontWeight: "bold" }}>
                     {p.name}
-                    <span style={{ fontSize: 7, color: "#6868a0", marginLeft: 4 }}>({p.age >= 15 ? "Adult" : "Child"})</span>
+                    <span style={{ fontSize: 7, color: "#8a7a68", marginLeft: 4 }}>({p.age >= 15 ? "Adult" : "Child"})</span>
                     {p.hints > 0 && (
-                      <span style={{ fontSize: 7, color: "#8888a0", marginLeft: 4 }}>
+                      <span style={{ fontSize: 7, color: "#8a7a68", marginLeft: 4 }}>
                         [{p.hints}h]
                       </span>
                     )}
@@ -2124,7 +2459,7 @@ export default function WoodlandTrivia() {
                 onRoll={rollDice}
                 disabled={diceRolling || state.phase !== "playing"}
               />
-              <span style={{ fontFamily: "'Press Start 2P'", fontSize: 7, color: "#8888a0" }}>
+              <span style={{ fontFamily: "'Press Start 2P'", fontSize: 7, color: "#6a5a48" }}>
                 {diceRolling ? "..." : "ROLL!"}
               </span>
             </div>
@@ -2133,6 +2468,19 @@ export default function WoodlandTrivia() {
       </div>
 
       {/* ── Overlays ── */}
+      {/* Junction picker */}
+      {state.phase === "junction-choice" && state.junctionChoices && (
+        <JunctionPicker
+          choices={state.junctionChoices}
+          playerName={currentP.name}
+          onChoose={(nextNode) => {
+            playSound("click");
+            dispatch({ type: "CHOOSE_PATH", nextNode });
+          }}
+          soundEnabled={settings.sound}
+        />
+      )}
+
       {state.phase === "question" && state.currentQuestion && !showPenalty && (
         <div>
           <QuestionCard

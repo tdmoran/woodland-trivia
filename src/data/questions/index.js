@@ -23,7 +23,7 @@ for (const cat of CATEGORIES) {
   ];
 }
 
-const CAT_COLORS = ["#4a8b2e", "#b87830", "#5070b0", "#9050a0", "#308888", "#b8a020"];
+const CAT_COLORS = ["#5a8a38", "#b87838", "#4878a0", "#8a5898", "#3a8878", "#c89030"];
 const CAT_ICONS = ["\u{1F33F}", "\u{1F5FA}\u{FE0F}", "\u{1F52C}", "\u{1F3A8}", "\u{1F344}", "\u{2728}"];
 const CAT_LABELS_SHORT = ["Nature", "History", "Science", "Arts", "Food", "Riddles"];
 
