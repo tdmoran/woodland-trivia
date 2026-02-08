@@ -102,265 +102,63 @@ function catmullRomToSvgPath(waypoints) {
   return d;
 }
 
-// ──── MAZE GRAPH (50 nodes, 5 junctions, 6 hubs) ────
-// Layout: bottom-to-top, branching at junctions
-// Junctions: 3, 12, 22, 29, 39
-// Hubs: 6(cat0), 15(cat1), 23(cat2), 25(cat3), 32(cat4), 47(cat5)
-const NUM_SPACES = 50;
-const HUB_INDICES = [6, 15, 23, 25, 32, 47];
-const HUB_NAMES = ["The Old Oak", "Mossy Bridge", "Bramble Hollow", "Rookery Tower", "Magpie's Market", "Blackbird Pond"];
-const JUNCTION_INDICES = [3, 12, 22, 29, 39];
-
-// Node positions laid out on 1800x1100 board
-const MAZE_NODE_DEFS = [
-  // Stem: 0-3 (bottom center, moving up)
-  { id: 0, x: 900, y: 1040 },  // START
-  { id: 1, x: 900, y: 970 },
-  { id: 2, x: 900, y: 900 },
-  { id: 3, x: 900, y: 830 },   // JUNCTION 1
-
-  // Junction 1 left branch: 4-7 (left toward hub1)
-  { id: 4, x: 720, y: 800 },
-  { id: 5, x: 580, y: 770 },
-  { id: 6, x: 440, y: 750 },   // HUB 1 (Nature) — The Old Oak
-  { id: 7, x: 560, y: 720 },
-
-  // Junction 1 right branch: 8-10
-  { id: 8, x: 1080, y: 800 },
-  { id: 9, x: 1220, y: 770 },
-  { id: 10, x: 1340, y: 740 },
-
-  // Merge after J1: 11-12
-  { id: 11, x: 900, y: 700 },
-  { id: 12, x: 900, y: 640 },  // JUNCTION 2
-
-  // Junction 2 left branch: 13-16 (toward hub2)
-  { id: 13, x: 700, y: 620 },
-  { id: 14, x: 540, y: 600 },
-  { id: 15, x: 400, y: 580 },  // HUB 2 (History) — Mossy Bridge
-  { id: 16, x: 540, y: 555 },
-
-  // Junction 2 middle: 17
-  { id: 17, x: 900, y: 570 },
-
-  // Junction 2 right branch: 18-20
-  { id: 18, x: 1100, y: 620 },
-  { id: 19, x: 1260, y: 600 },
-  { id: 20, x: 1360, y: 570 },
-
-  // Merge after J2: 21-22
-  { id: 21, x: 900, y: 500 },
-  { id: 22, x: 900, y: 440 },  // JUNCTION 3
-
-  // Junction 3 left branch: 23-24 (hub3)
-  { id: 23, x: 680, y: 415 },  // HUB 3 (Science) — Bramble Hollow
-  { id: 24, x: 560, y: 390 },
-
-  // Junction 3 right branch: 25
-  { id: 25, x: 1140, y: 415 }, // HUB 4 (Arts) — Rookery Tower
-
-  // Merge after J3: 26-29
-  { id: 26, x: 900, y: 370 },
-  { id: 27, x: 900, y: 310 },
-  { id: 28, x: 900, y: 250 },
-  { id: 29, x: 900, y: 190 },  // JUNCTION 4
-
-  // Junction 4 left branch: 30-32
-  { id: 30, x: 700, y: 175 },
-  { id: 31, x: 550, y: 160 },
-  { id: 32, x: 420, y: 145 },  // HUB 5 (Food) — Magpie's Market
-
-  // Junction 4 middle: 33 (straight ahead)
-  { id: 33, x: 900, y: 130 },
-
-  // Junction 4 right branch: 34-36
-  { id: 34, x: 1120, y: 175 },
-  { id: 35, x: 1280, y: 160 },
-  { id: 36, x: 1420, y: 145 },
-
-  // Merge after J4: 37-39
-  { id: 37, x: 900, y: 80 },
-  { id: 38, x: 580, y: 60 },
-  { id: 39, x: 400, y: 50 },   // JUNCTION 5
-
-  // Junction 5 left branch: 40-42
-  { id: 40, x: 260, y: 85 },
-  { id: 41, x: 180, y: 130 },
-  { id: 42, x: 130, y: 190 },
-
-  // Junction 5 right branch: 43-46
-  { id: 43, x: 260, y: 30 },
-  { id: 44, x: 180, y: 60 },
-  { id: 45, x: 130, y: 110 },
-  { id: 46, x: 100, y: 180 },
-
-  // Merge + finish: 47-49
-  { id: 47, x: 130, y: 270 },  // HUB 6 (Riddles) — Blackbird Pond
-  { id: 48, x: 180, y: 350 },
-  { id: 49, x: 250, y: 420 },  // FINISH
+// ──── LINEAR TRAIL (100 spaces) ────
+// Long winding Catmull-Rom path across a wide landscape (viewBox 1800x1100)
+const TRAIL_WAYPOINTS = [
+  { x: 100, y: 1040 }, { x: 260, y: 1000 }, { x: 440, y: 960 },
+  { x: 640, y: 920 }, { x: 840, y: 950 }, { x: 1020, y: 1000 },
+  { x: 1200, y: 960 }, { x: 1380, y: 900 }, { x: 1540, y: 830 },
+  { x: 1660, y: 730 }, { x: 1580, y: 620 }, { x: 1400, y: 560 },
+  { x: 1200, y: 530 }, { x: 1000, y: 560 }, { x: 800, y: 600 },
+  { x: 600, y: 560 }, { x: 420, y: 500 }, { x: 280, y: 420 },
+  { x: 200, y: 320 }, { x: 320, y: 240 }, { x: 500, y: 200 },
+  { x: 700, y: 180 }, { x: 900, y: 200 }, { x: 1100, y: 240 },
+  { x: 1280, y: 200 }, { x: 1440, y: 140 }, { x: 1600, y: 80 },
+  { x: 1700, y: 60 },
 ];
 
-// Adjacency: node connections (edges of the maze, bidirectional)
-// forward[] = which nodes you can move toward from this node (toward finish)
-// "connections" = all adjacent node IDs
-const MAZE_EDGES = [
-  [0, 1], [1, 2], [2, 3],                    // stem
-  [3, 4], [4, 5], [5, 6], [6, 7],            // J1 left
-  [3, 8], [8, 9], [9, 10],                   // J1 right
-  [7, 11], [10, 11], [11, 12],               // merge into J2
-  [12, 13], [13, 14], [14, 15], [15, 16],    // J2 left
-  [12, 17],                                   // J2 middle
-  [12, 18], [18, 19], [19, 20],              // J2 right
-  [16, 21], [17, 21], [20, 21], [21, 22],    // merge into J3
-  [22, 23], [23, 24],                         // J3 left
-  [22, 25],                                   // J3 right
-  [24, 26], [25, 26], [26, 27], [27, 28], [28, 29], // merge into J4
-  [29, 30], [30, 31], [31, 32],              // J4 left
-  [29, 33],                                   // J4 middle
-  [29, 34], [34, 35], [35, 36],              // J4 right
-  [32, 37], [33, 37], [36, 37],              // merge
-  [37, 38], [38, 39],                         // into J5
-  [39, 40], [40, 41], [41, 42],              // J5 left
-  [39, 43], [43, 44], [44, 45], [45, 46],   // J5 right
-  [42, 47], [46, 47],                         // merge at hub6
-  [47, 48], [48, 49],                         // to finish
-];
-
-// Build adjacency list
-const ADJACENCY = Array.from({ length: NUM_SPACES }, () => []);
-for (const [a, b] of MAZE_EDGES) {
-  if (!ADJACENCY[a].includes(b)) ADJACENCY[a].push(b);
-  if (!ADJACENCY[b].includes(a)) ADJACENCY[b].push(a);
+function catmullRomPoint(p0, p1, p2, p3, t) {
+  const t2 = t * t, t3 = t2 * t;
+  return {
+    x: 0.5 * ((2 * p1.x) + (-p0.x + p2.x) * t + (2 * p0.x - 5 * p1.x + 4 * p2.x - p3.x) * t2 + (-p0.x + 3 * p1.x - 3 * p2.x + p3.x) * t3),
+    y: 0.5 * ((2 * p1.y) + (-p0.y + p2.y) * t + (2 * p0.y - 5 * p1.y + 4 * p2.y - p3.y) * t2 + (-p0.y + 3 * p1.y - 3 * p2.y + p3.y) * t3),
+  };
 }
 
-// Build MAZE_NODES with all properties
-const MAZE_NODES = MAZE_NODE_DEFS.map((def) => {
-  const hubIdx = HUB_INDICES.indexOf(def.id);
-  const isJunction = JUNCTION_INDICES.includes(def.id);
-  // Calculate angle from first connection for tile rotation
-  const conns = ADJACENCY[def.id];
-  let angle = 0;
-  if (conns.length > 0) {
-    const neighbor = MAZE_NODE_DEFS[conns[0]];
-    angle = Math.atan2(neighbor.y - def.y, neighbor.x - def.x) * (180 / Math.PI);
+function samplePath(waypoints, n) {
+  const pts = [waypoints[0], ...waypoints, waypoints[waypoints.length - 1]];
+  const segments = pts.length - 3;
+  const points = [];
+  for (let i = 0; i < n; i++) {
+    const t = (i / (n - 1)) * segments;
+    const seg = Math.min(Math.floor(t), segments - 1);
+    const lt = t - seg;
+    points.push(catmullRomPoint(pts[seg], pts[seg + 1], pts[seg + 2], pts[seg + 3], lt));
   }
+  return points;
+}
+
+const NUM_SPACES = 100;
+const TRAIL_PATH_D = catmullRomToSvgPath(TRAIL_WAYPOINTS);
+const SPACE_POINTS = samplePath(TRAIL_WAYPOINTS, NUM_SPACES);
+const HUB_INDICES = [14, 30, 46, 62, 78, 94];
+const HUB_NAMES = ["The Old Oak", "Mossy Bridge", "Bramble Hollow", "Rookery Tower", "Magpie's Market", "Blackbird Pond"];
+
+const BOARD_SPACES = SPACE_POINTS.map((pt, i) => {
+  const hubIdx = HUB_INDICES.indexOf(i);
+  const prev = SPACE_POINTS[Math.max(0, i - 1)];
+  const next = SPACE_POINTS[Math.min(SPACE_POINTS.length - 1, i + 1)];
+  const angle = Math.atan2(next.y - prev.y, next.x - prev.x) * (180 / Math.PI);
   return {
-    id: def.id,
-    x: def.x,
-    y: def.y,
+    id: i,
+    x: pt.x,
+    y: pt.y,
     angle,
-    catIndex: hubIdx >= 0 ? hubIdx : def.id % 6,
+    catIndex: hubIdx >= 0 ? hubIdx : i % 6,
     isHub: hubIdx >= 0,
     hubIndex: hubIdx,
-    isJunction,
-    connections: conns,
   };
 });
-
-// For backward compatibility alias
-const BOARD_SPACES = MAZE_NODES;
-
-// Generate SVG path strings per edge for trail rendering
-const MAZE_EDGE_PATHS = MAZE_EDGES.map(([a, b]) => {
-  const na = MAZE_NODE_DEFS[a], nb = MAZE_NODE_DEFS[b];
-  return `M${na.x},${na.y} L${nb.x},${nb.y}`;
-});
-
-// ──── PATHFINDING HELPERS ────
-// BFS to find all nodes reachable within `steps` from `startNode`, moving only forward (away from start/node 0)
-// Returns array of { nodeId, path } where path is the sequence of node IDs visited
-function findReachableNodes(startNode, steps) {
-  // BFS with distance tracking
-  const queue = [{ node: startNode, dist: 0, path: [startNode] }];
-  const results = [];
-  const visited = new Set();
-  visited.add(startNode);
-
-  while (queue.length > 0) {
-    const { node, dist, path } = queue.shift();
-    if (dist === steps) {
-      results.push({ nodeId: node, path });
-      continue;
-    }
-    const neighbors = ADJACENCY[node];
-    // Only move forward (to higher-numbered nodes generally, but use all connections)
-    for (const next of neighbors) {
-      // Don't go backward through the path we just took
-      if (path.includes(next)) continue;
-      const newPath = [...path, next];
-      if (dist + 1 === steps) {
-        results.push({ nodeId: next, path: newPath });
-      } else {
-        // Check if next node is a junction with multiple forward options
-        const forwardNeighbors = ADJACENCY[next].filter(n => !newPath.includes(n));
-        if (JUNCTION_INDICES.includes(next) && forwardNeighbors.length > 1) {
-          // Stop at junction — player must choose
-          results.push({ nodeId: next, path: newPath, remainingSteps: steps - dist - 1, isJunction: true });
-        } else {
-          queue.push({ node: next, dist: dist + 1, path: newPath });
-        }
-      }
-    }
-    // If no forward neighbors, this is a dead end — stop here
-    if (neighbors.filter(n => !path.includes(n)).length === 0 && dist < steps) {
-      results.push({ nodeId: node, path });
-    }
-  }
-  return results;
-}
-
-// Get shortest path between two nodes
-function getPathBetween(from, to) {
-  const queue = [{ node: from, path: [from] }];
-  const visited = new Set([from]);
-  while (queue.length > 0) {
-    const { node, path } = queue.shift();
-    if (node === to) return path;
-    for (const next of ADJACENCY[node]) {
-      if (!visited.has(next)) {
-        visited.add(next);
-        queue.push({ node: next, path: [...path, next] });
-      }
-    }
-  }
-  return [from]; // fallback
-}
-
-// Get forward directions from a junction node, given the path taken so far
-function getJunctionChoices(junctionNode, pathHistory) {
-  const neighbors = ADJACENCY[junctionNode].filter(n => !pathHistory.includes(n));
-  // Label the directions based on relative position
-  return neighbors.map(n => {
-    const jn = MAZE_NODE_DEFS[junctionNode];
-    const nn = MAZE_NODE_DEFS[n];
-    const dx = nn.x - jn.x;
-    const dy = nn.y - jn.y;
-    const angle = Math.atan2(dy, dx) * (180 / Math.PI);
-    // Determine rough direction name
-    let dirName;
-    if (Math.abs(dx) < 50) dirName = dy < 0 ? "Straight" : "Back";
-    else if (dx < 0) dirName = "Left";
-    else dirName = "Right";
-    // Check what's ahead on this path
-    let hubAhead = null;
-    const visited = new Set(pathHistory);
-    visited.add(junctionNode);
-    const scout = [n];
-    const scouted = new Set([n]);
-    for (let step = 0; step < 6 && scout.length > 0; step++) {
-      const curr = scout.shift();
-      const node = MAZE_NODES[curr];
-      if (node.isHub) { hubAhead = node.hubIndex; break; }
-      for (const next of ADJACENCY[curr]) {
-        if (!visited.has(next) && !scouted.has(next)) {
-          scouted.add(next);
-          scout.push(next);
-        }
-      }
-    }
-    return { nextNode: n, dirName, hubAhead, angle };
-  });
-}
 
 // ──── DETERMINISTIC DECORATIONS ────
 function seededRng(seed) {
@@ -374,15 +172,7 @@ function seededRng(seed) {
 
 const rng = seededRng(42);
 function nearPath(x, y, dist = 48) {
-  // Check proximity to any maze node
-  if (MAZE_NODES.some(s => Math.abs(s.x - x) < dist && Math.abs(s.y - y) < dist)) return true;
-  // Also check proximity to edge midpoints for paths between nodes
-  for (const [a, b] of MAZE_EDGES) {
-    const na = MAZE_NODE_DEFS[a], nb = MAZE_NODE_DEFS[b];
-    const mx = (na.x + nb.x) / 2, my = (na.y + nb.y) / 2;
-    if (Math.abs(mx - x) < dist && Math.abs(my - y) < dist) return true;
-  }
-  return false;
+  return BOARD_SPACES.some(s => Math.abs(s.x - x) < dist && Math.abs(s.y - y) < dist);
 }
 
 const DECO = [];
@@ -488,10 +278,11 @@ for (let i = 0; i < 15; i++) {
 }
 
 // ──── PLAYER CONFIG ────
-const BIRD_NAMES = ["Crow", "Magpie", "Rook", "Jackdaw"];
-const BIRD_COLORS = ["#5a4a35", "#c8baa8", "#7a5a80", "#5a7a68"];
-const BIRD_ACCENTS = ["#ffd700", "#4488cc", "#b070e0", "#50b050"];
-const BIRD_EMOJIS = ["\u{1F426}\u{200D}\u{2B1B}", "\u{1F426}", "\u{1FAB6}", "\u{1F54A}\u{FE0F}"];
+const BIRD_NAMES = ["Pheasant", "Hen", "Pigeon", "Duck"];
+const BIRD_COLORS = ["#8a5a30", "#c8baa8", "#7888a0", "#b8a070"];
+const BIRD_ACCENTS = ["#c05040", "#d4a850", "#5878a8", "#508848"];
+const BIRD_EMOJIS = ["\u{1F426}\u{200D}\u{2B1B}", "\u{1F414}", "\u{1F54A}\u{FE0F}", "\u{1F986}"];
+const BIRD_IMAGES = ["/felt/bird-pheasant.png", "/felt/bird-chicken.png", "/felt/bird-pigeon.png", "/felt/bird-duck.png"];
 
 // ──── GAME REDUCER ────
 function makeInitialState(playerCount, names, ages, difficulty) {
@@ -507,8 +298,8 @@ function makeInitialState(playerCount, names, ages, difficulty) {
       color: BIRD_COLORS[i],
       accent: BIRD_ACCENTS[i],
       emoji: BIRD_EMOJIS[i],
-      currentNode: 0,
-      pathHistory: [0],
+      birdImage: BIRD_IMAGES[i],
+      position: 0,
       feathers: [false, false, false, false, false, false],
       hints: diff.hintsPerPlayer,
     })),
@@ -527,84 +318,6 @@ function makeInitialState(playerCount, names, ages, difficulty) {
     showSettings: false,
     timerExpired: false,
     askedQuestions: [],
-    // Maze-specific state
-    junctionChoices: null,    // available choices at current junction
-    remainingSteps: 0,        // steps left after hitting a junction
-  };
-}
-
-// Helper: move player along the maze, stopping at junctions
-function movePlayerForward(player, steps) {
-  let current = player.currentNode;
-  let history = [...player.pathHistory];
-  let remaining = steps;
-
-  while (remaining > 0) {
-    const neighbors = ADJACENCY[current].filter(n => !history.includes(n));
-    if (neighbors.length === 0) break; // dead end or finish
-
-    if (JUNCTION_INDICES.includes(current) && neighbors.length > 1) {
-      // Hit a junction — must stop and choose
-      return { currentNode: current, pathHistory: history, remainingSteps: remaining, atJunction: true };
-    }
-
-    // Only one way forward — auto-move
-    const next = neighbors[0];
-    history.push(next);
-    current = next;
-    remaining--;
-
-    // Check if we landed ON a junction with choices ahead (for next step)
-    if (remaining > 0 && JUNCTION_INDICES.includes(current)) {
-      const fwd = ADJACENCY[current].filter(n => !history.includes(n));
-      if (fwd.length > 1) {
-        return { currentNode: current, pathHistory: history, remainingSteps: remaining, atJunction: true };
-      }
-    }
-  }
-
-  return { currentNode: current, pathHistory: history, remainingSteps: 0, atJunction: false };
-}
-
-function askQuestion(state, player, space, val, newPlayers) {
-  const catIndex = space.catIndex;
-  const playerAge = player.age || 99;
-  let qs = state.questions[CATEGORIES[catIndex]] || [];
-  const diceDifficulty = val <= 2 ? "easy" : val <= 4 ? "medium" : "hard";
-  const diffFiltered = qs.filter(q => q.difficulty === diceDifficulty);
-  if (diffFiltered.length > 0) qs = diffFiltered;
-  qs = qs.filter(q => (q.ageMin || 0) <= playerAge);
-  let available = qs.filter(q => !state.askedQuestions.includes(q.question));
-  if (available.length === 0) available = qs;
-  if (available.length === 0) available = state.questions[CATEGORIES[catIndex]] || [];
-  if (available.length === 0) {
-    return {
-      ...state,
-      players: newPlayers,
-      diceValue: val,
-      currentPlayer: (state.currentPlayer + 1) % state.playerCount,
-      message: `${player.name} rolled ${val}. No questions! Next turn.`,
-    };
-  }
-  const question = available[Math.floor(Math.random() * available.length)];
-  return {
-    ...state,
-    players: newPlayers,
-    diceValue: val,
-    phase: "question",
-    currentQuestion: question,
-    currentCatIndex: catIndex,
-    selectedAnswer: null,
-    answerRevealed: false,
-    eliminatedOptions: [],
-    timerExpired: false,
-    askedQuestions: [...state.askedQuestions, question.question],
-    diceDifficulty,
-    junctionChoices: null,
-    remainingSteps: 0,
-    message: space.isHub
-      ? `${player.name} rolled ${val} — ${diceDifficulty.toUpperCase()} ${CAT_LABELS_SHORT[catIndex]} at ${HUB_NAMES[space.hubIndex]}!`
-      : `${player.name} rolled ${val} — ${diceDifficulty.toUpperCase()} ${CAT_LABELS_SHORT[catIndex]} question!`,
   };
 }
 
@@ -626,79 +339,52 @@ function gameReducer(state, action) {
     case "ROLL_DICE": {
       const val = action.value;
       const p = state.players[state.currentPlayer];
-      const moveResult = movePlayerForward(p, val);
-      const space = MAZE_NODES[moveResult.currentNode];
-      const newPlayers = state.players.map((pl, i) =>
-        i === state.currentPlayer
-          ? { ...pl, currentNode: moveResult.currentNode, pathHistory: moveResult.pathHistory }
-          : pl
-      );
-
-      if (moveResult.atJunction) {
-        // Player hit a junction — show direction picker
-        const choices = getJunctionChoices(moveResult.currentNode, moveResult.pathHistory);
+      const newPos = Math.min(p.position + val, NUM_SPACES - 1);
+      const space = BOARD_SPACES[newPos];
+      const newPlayers = state.players.map((pl, i) => (i === state.currentPlayer ? { ...pl, position: newPos } : pl));
+      const catIndex = space.catIndex;
+      const playerAge = p.age || 99;
+      let qs = state.questions[CATEGORIES[catIndex]] || [];
+      const diceDifficulty = val <= 2 ? "easy" : val <= 4 ? "medium" : "hard";
+      const diffFiltered = qs.filter(q => q.difficulty === diceDifficulty);
+      if (diffFiltered.length > 0) qs = diffFiltered;
+      qs = qs.filter(q => (q.ageMin || 0) <= playerAge);
+      let available = qs.filter(q => !state.askedQuestions.includes(q.question));
+      if (available.length === 0) available = qs;
+      if (available.length === 0) available = state.questions[CATEGORIES[catIndex]] || [];
+      if (available.length === 0) {
         return {
           ...state,
           players: newPlayers,
           diceValue: val,
-          phase: "junction-choice",
-          remainingSteps: moveResult.remainingSteps,
-          junctionChoices: choices,
-          message: `${p.name} rolled ${val} — Choose your path!`,
+          currentPlayer: (state.currentPlayer + 1) % state.playerCount,
+          message: `${p.name} rolled ${val}. No questions! Next turn.`,
         };
       }
-
-      // Normal move — ask a question
-      return askQuestion(state, p, space, val, newPlayers);
-    }
-    case "CHOOSE_PATH": {
-      // Player chose a direction at a junction
-      const p = state.players[state.currentPlayer];
-      const chosenNext = action.nextNode;
-      let history = [...p.pathHistory, chosenNext];
-      let current = chosenNext;
-      let remaining = state.remainingSteps - 1;
-
-      // Continue moving after the choice
-      if (remaining > 0) {
-        const contResult = movePlayerForward(
-          { currentNode: current, pathHistory: history },
-          remaining
-        );
-        current = contResult.currentNode;
-        history = contResult.pathHistory;
-
-        if (contResult.atJunction) {
-          const newPlayers = state.players.map((pl, i) =>
-            i === state.currentPlayer
-              ? { ...pl, currentNode: current, pathHistory: history }
-              : pl
-          );
-          const choices = getJunctionChoices(current, history);
-          return {
-            ...state,
-            players: newPlayers,
-            phase: "junction-choice",
-            remainingSteps: contResult.remainingSteps,
-            junctionChoices: choices,
-            message: `${p.name} reached another fork — Choose your path!`,
-          };
-        }
-      }
-
-      const space = MAZE_NODES[current];
-      const newPlayers = state.players.map((pl, i) =>
-        i === state.currentPlayer
-          ? { ...pl, currentNode: current, pathHistory: history }
-          : pl
-      );
-      return askQuestion(state, p, space, state.diceValue, newPlayers);
+      const question = available[Math.floor(Math.random() * available.length)];
+      return {
+        ...state,
+        players: newPlayers,
+        diceValue: val,
+        phase: "question",
+        currentQuestion: question,
+        currentCatIndex: catIndex,
+        selectedAnswer: null,
+        answerRevealed: false,
+        eliminatedOptions: [],
+        timerExpired: false,
+        askedQuestions: [...state.askedQuestions, question.question],
+        diceDifficulty,
+        message: space.isHub
+          ? `${p.name} rolled ${val} — ${diceDifficulty.toUpperCase()} ${CAT_LABELS_SHORT[catIndex]} at ${HUB_NAMES[space.hubIndex]}!`
+          : `${p.name} rolled ${val} — ${diceDifficulty.toUpperCase()} ${CAT_LABELS_SHORT[catIndex]} question!`,
+      };
     }
     case "ANSWER": {
       const correct = action.answer === state.currentQuestion.answer;
       const p = state.players[state.currentPlayer];
-      const space = MAZE_NODES[p.currentNode];
-      let newPlayers = state.players.map(pl => ({ ...pl, pathHistory: [...pl.pathHistory] }));
+      const space = BOARD_SPACES[p.position];
+      let newPlayers = state.players.map(pl => ({ ...pl }));
       let winner = null;
       if (correct && space.isHub) {
         const f = [...p.feathers];
@@ -743,16 +429,9 @@ function gameReducer(state, action) {
     }
     case "PENALTY_MOVE": {
       const p = state.players[state.currentPlayer];
-      // Walk backward through pathHistory
-      const history = [...p.pathHistory];
-      let stepsBack = action.value;
-      while (stepsBack > 0 && history.length > 1) {
-        history.pop();
-        stepsBack--;
-      }
-      const newNode = history[history.length - 1];
+      const newPos = Math.max(0, p.position - action.value);
       const newPlayers = state.players.map((pl, i) =>
-        i === state.currentPlayer ? { ...pl, currentNode: newNode, pathHistory: history } : pl
+        i === state.currentPlayer ? { ...pl, position: newPos } : pl
       );
       return {
         ...state,
@@ -773,8 +452,6 @@ function gameReducer(state, action) {
         diceValue: null,
         eliminatedOptions: [],
         timerExpired: false,
-        junctionChoices: null,
-        remainingSteps: 0,
         message: `${state.players[next].name}'s turn! Roll the dice!`,
       };
     }
@@ -813,7 +490,7 @@ function FeltDecoration({ item }) {
   );
 }
 
-// ──── GAME BOARD (MAZE) ────
+// ──── GAME BOARD ────
 function GameBoard({ spaces, players, currentPlayer }) {
   return (
     <svg viewBox="0 0 1800 1100" style={{ width: "100%", height: "100%" }}>
@@ -862,17 +539,15 @@ function GameBoard({ spaces, players, currentPlayer }) {
         <FeltDecoration key={`dbg${i}`} item={item} />
       ))}
 
-      {/* Maze trail ribbons — one per edge */}
-      {MAZE_EDGE_PATHS.map((d, i) => (
-        <g key={`trail${i}`}>
-          <path d={d} stroke="rgba(100,80,50,0.2)" strokeWidth={36} fill="none" strokeLinecap="round" strokeLinejoin="round" />
-          <path d={d} stroke="#8a7050" strokeWidth={30} fill="none" strokeLinecap="round" strokeLinejoin="round" />
-          <path d={d} stroke="#a08060" strokeWidth={24} fill="none" strokeLinecap="round" strokeLinejoin="round" />
-          <path d={d} stroke="#b89870" strokeWidth={18} fill="none" strokeLinecap="round" strokeLinejoin="round" />
-          {/* Stitch marks */}
-          <path d={d} stroke="#c8a878" strokeWidth={1.2} fill="none" strokeLinecap="round" strokeDasharray="4,7" />
-        </g>
-      ))}
+      {/* Trail ribbon */}
+      <g>
+        <path d={TRAIL_PATH_D} stroke="rgba(100,80,50,0.2)" strokeWidth={36} fill="none" strokeLinecap="round" strokeLinejoin="round" />
+        <path d={TRAIL_PATH_D} stroke="#8a7050" strokeWidth={30} fill="none" strokeLinecap="round" strokeLinejoin="round" />
+        <path d={TRAIL_PATH_D} stroke="#a08060" strokeWidth={24} fill="none" strokeLinecap="round" strokeLinejoin="round" />
+        <path d={TRAIL_PATH_D} stroke="#b89870" strokeWidth={18} fill="none" strokeLinecap="round" strokeLinejoin="round" />
+        {/* Stitch marks */}
+        <path d={TRAIL_PATH_D} stroke="#c8a878" strokeWidth={1.2} fill="none" strokeLinecap="round" strokeDasharray="4,7" />
+      </g>
 
       {/* Start / Finish markers */}
       <g>
@@ -888,9 +563,8 @@ function GameBoard({ spaces, players, currentPlayer }) {
       {/* Board spaces — rounded felt tiles */}
       {spaces.map((s) => {
         const isHub = s.isHub;
-        const isJunction = s.isJunction;
-        const hw = isHub ? 28 : isJunction ? 24 : 18;
-        const hh = isHub ? 20 : isJunction ? 18 : 14;
+        const hw = isHub ? 28 : 18;
+        const hh = isHub ? 20 : 14;
         const rx = 6;
         return (
           <g key={`sp${s.id}`} transform={`translate(${s.x}, ${s.y})`}>
@@ -905,10 +579,10 @@ function GameBoard({ spaces, players, currentPlayer }) {
               width={hw * 2}
               height={hh * 2}
               rx={rx}
-              fill={isJunction ? "#8a6828" : CAT_COLORS[s.catIndex]}
-              stroke={isHub ? "#c89030" : isJunction ? "#c89030" : "#5a4a35"}
-              strokeWidth={isHub ? 3.5 : isJunction ? 3 : 2.5}
-              strokeDasharray={isHub || isJunction ? "none" : "4,3"}
+              fill={CAT_COLORS[s.catIndex]}
+              stroke={isHub ? "#c89030" : "#5a4a35"}
+              strokeWidth={isHub ? 3.5 : 2.5}
+              strokeDasharray={isHub ? "none" : "4,3"}
             />
             {/* Inner felt highlight */}
             <rect x={-hw + 4} y={-hh + 3} width={(hw - 4) * 2} height={(hh - 3) * 2} rx={rx - 2} fill="rgba(255,255,255,0.1)" />
@@ -916,12 +590,12 @@ function GameBoard({ spaces, players, currentPlayer }) {
             {isHub && (
               <rect x={-hw - 6} y={-hh - 6} width={(hw + 6) * 2} height={(hh + 6) * 2} rx={rx + 4} fill="none" stroke="#c89030" strokeWidth={2.5} strokeDasharray="5,4" opacity={0.6} />
             )}
-            {/* Space content (un-rotated not needed since no rotation) */}
+            {/* Space number */}
             <text
               x={0}
               y={isHub ? -3 : 3}
               textAnchor="middle"
-              fontSize={isHub ? "9" : isJunction ? "8" : "7"}
+              fontSize={isHub ? "9" : "7"}
               fill="#fff"
               stroke="#3a2a1a"
               strokeWidth={2.5}
@@ -930,17 +604,17 @@ function GameBoard({ spaces, players, currentPlayer }) {
               fontWeight="bold"
               style={{ pointerEvents: "none" }}
             >
-              {isJunction ? "\u{1F6A9}" : s.id + 1}
+              {s.id + 1}
             </text>
             {/* Category icon */}
             <text
               x={0}
               y={isHub ? 14 : 14}
               textAnchor="middle"
-              fontSize={isHub ? "15" : isJunction ? "12" : "10"}
+              fontSize={isHub ? "15" : "10"}
               style={{ pointerEvents: "none" }}
             >
-              {isJunction ? "\u{2194}\u{FE0F}" : CAT_ICONS[s.catIndex]}
+              {CAT_ICONS[s.catIndex]}
             </text>
             {/* Hub name */}
             {isHub && (
@@ -954,20 +628,6 @@ function GameBoard({ spaces, players, currentPlayer }) {
                 style={{ pointerEvents: "none" }}
               >
                 {HUB_NAMES[s.hubIndex]}
-              </text>
-            )}
-            {/* Junction signpost label */}
-            {isJunction && (
-              <text
-                x={0}
-                y={hh + 14}
-                textAnchor="middle"
-                fontSize="4.5"
-                fill="#8a6828"
-                fontFamily="'Press Start 2P'"
-                style={{ pointerEvents: "none" }}
-              >
-                FORK
               </text>
             )}
           </g>
@@ -998,12 +658,12 @@ function GameBoard({ spaces, players, currentPlayer }) {
 
       {/* Players */}
       {players.map((p, i) => {
-        const space = spaces.find(s => s.id === p.currentNode);
+        const space = spaces[p.position];
         if (!space) return null;
-        const sameSpacePlayers = players.filter(pl => pl.currentNode === p.currentNode);
+        const sameSpacePlayers = players.filter(pl => pl.position === p.position);
         const myIdx = sameSpacePlayers.findIndex(pl => pl.id === p.id);
         const angle = (myIdx / sameSpacePlayers.length) * Math.PI * 2;
-        const spread = sameSpacePlayers.length > 1 ? 24 : 0;
+        const spread = sameSpacePlayers.length > 1 ? 60 : 0;
         const offsetX = Math.cos(angle) * spread;
         const offsetY = Math.sin(angle) * spread * 0.5;
         const tx = space.x + offsetX;
@@ -1012,27 +672,30 @@ function GameBoard({ spaces, players, currentPlayer }) {
         return (
           <g key={`pl${p.id}`} transform={`translate(${tx}, ${ty})`}>
             {/* Shadow */}
-            <ellipse cx={0} cy={6} rx={18} ry={7} fill="rgba(0,0,0,0.2)" />
-            {/* Token body (rounded felt pawn) */}
-            <ellipse cx={0} cy={-8} rx={16} ry={6} fill={p.color} stroke={isCurr ? "#f0c040" : p.accent} strokeWidth={isCurr ? 3 : 2} />
-            <ellipse cx={0} cy={-30} rx={18} ry={18} fill={p.color} stroke={isCurr ? "#f0c040" : p.accent} strokeWidth={isCurr ? 3 : 2} />
-            <rect x={-16} y={-30} width={32} height={22} fill={p.color} />
-            {/* Stitch detail */}
-            <ellipse cx={0} cy={-30} rx={14} ry={14} fill="none" stroke="rgba(255,255,255,0.2)" strokeWidth={1.5} strokeDasharray="3,3" />
-            {/* Emoji */}
-            <text x={0} y={-24} textAnchor="middle" fontSize="20" style={{ pointerEvents: "none" }}>
-              {p.emoji}
-            </text>
-            {/* Current player indicator */}
+            <ellipse cx={0} cy={20} rx={55} ry={18} fill="rgba(0,0,0,0.25)" />
+            {/* Bird image token */}
+            <image
+              href={p.birdImage}
+              x={-110}
+              y={-200}
+              width={220}
+              height={220}
+              style={{ pointerEvents: "none", filter: isCurr ? "drop-shadow(0 0 8px #f0c040)" : "none" }}
+            />
+            {/* Highlight ring for current player */}
+            {isCurr && (
+              <ellipse cx={0} cy={-90} rx={120} ry={120} fill="none" stroke="#f0c040" strokeWidth={3.5} strokeDasharray="8,5" style={{ animation: "pulse 1.5s infinite" }} />
+            )}
+            {/* Current player name tag */}
             {isCurr && (
               <g>
                 <polygon
-                  points="-5,-56 5,-56 0,-49"
+                  points="-8,-218 8,-218 0,-206"
                   fill="#f0c040"
                   style={{ animation: "bounce 1s infinite" }}
                 />
-                <rect x={-28} y={-72} width={56} height={16} fill="#c89030" stroke="#8a7a68" strokeWidth={1.5} rx={4} />
-                <text x={0} y={-61} textAnchor="middle" fontSize="6.5" fill="#f5edd8" fontFamily="'Press Start 2P'" style={{ pointerEvents: "none" }}>
+                <rect x={-50} y={-242} width={100} height={24} fill="#c89030" stroke="#8a7a68" strokeWidth={2} rx={6} />
+                <text x={0} y={-226} textAnchor="middle" fontSize="11" fill="#f5edd8" fontFamily="'Press Start 2P'" style={{ pointerEvents: "none" }}>
                   {p.name}
                 </text>
               </g>
@@ -1041,73 +704,6 @@ function GameBoard({ spaces, players, currentPlayer }) {
         );
       })}
     </svg>
-  );
-}
-
-// ──── JUNCTION PICKER ────
-function JunctionPicker({ choices, playerName, onChoose, soundEnabled }) {
-  return (
-    <div
-      style={{
-        position: "fixed",
-        inset: 0,
-        zIndex: 120,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        background: "rgba(120,100,70,0.8)",
-        backdropFilter: "blur(4px)",
-        animation: "fadeIn 0.25s ease",
-      }}
-    >
-      <div
-        className="pixel-panel"
-        style={{
-          maxWidth: 460,
-          width: "94%",
-          padding: "24px 28px",
-          textAlign: "center",
-          animation: "slideUp 0.3s ease",
-          borderRadius: 8,
-        }}
-      >
-        <div style={{ fontSize: 28, marginBottom: 8 }}>{"\u{1F6A9}"}</div>
-        <h2 style={{ fontFamily: "'Press Start 2P'", fontSize: 13, color: "#8a6828", margin: "0 0 6px", textShadow: "2px 2px 0 rgba(80,60,40,0.2)" }}>
-          FORK IN THE PATH
-        </h2>
-        <p style={{ fontFamily: "var(--ui-font)", fontSize: 10, color: "#6a5a48", marginBottom: 18 }}>
-          {playerName}, choose your direction!
-        </p>
-        <div style={{ display: "flex", gap: 10, justifyContent: "center", flexWrap: "wrap" }}>
-          {choices.map((choice, i) => (
-            <button
-              key={i}
-              onClick={() => onChoose(choice.nextNode)}
-              className="pixel-btn pixel-btn-green"
-              style={{
-                fontSize: 10,
-                padding: "12px 20px",
-                minWidth: 100,
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "center",
-                gap: 6,
-              }}
-            >
-              <span style={{ fontSize: 18 }}>
-                {choice.dirName === "Left" ? "\u{2B05}\u{FE0F}" : choice.dirName === "Right" ? "\u{27A1}\u{FE0F}" : "\u{2B06}\u{FE0F}"}
-              </span>
-              <span>{choice.dirName}</span>
-              {choice.hubAhead !== null && (
-                <span style={{ fontSize: 7, opacity: 0.8 }}>
-                  {CAT_ICONS[choice.hubAhead]} {HUB_NAMES[choice.hubAhead]}
-                </span>
-              )}
-            </button>
-          ))}
-        </div>
-      </div>
-    </div>
   );
 }
 
@@ -1872,7 +1468,7 @@ export default function WoodlandTrivia() {
   const handleAnswer = (answer) => {
     const correct = answer === state.currentQuestion.answer;
     playSound(correct ? "correct" : "wrong");
-    const space = MAZE_NODES[state.players[state.currentPlayer].currentNode];
+    const space = BOARD_SPACES[state.players[state.currentPlayer].position];
     if (correct && space.isHub) {
       setTimeout(() => playSound("feather"), 400);
     }
@@ -2028,8 +1624,10 @@ export default function WoodlandTrivia() {
         <TitleBackground />
         <div className="pixel-panel scanlines" style={{ padding: "28px 32px", maxWidth: 580, width: "100%", textAlign: "center", animation: "slideUp 0.5s ease", position: "relative", borderRadius: 8, zIndex: 1 }}>
           {/* Title */}
-          <div style={{ fontSize: 32, marginBottom: 8, letterSpacing: 6 }}>
-            {BIRD_EMOJIS.join("")}
+          <div style={{ display: "flex", justifyContent: "center", gap: 8, marginBottom: 8 }}>
+            {BIRD_IMAGES.map((src, i) => (
+              <img key={i} src={src} alt={BIRD_NAMES[i]} style={{ width: 36, height: 36, objectFit: "contain" }} />
+            ))}
           </div>
           <h1 style={{ fontFamily: "'Press Start 2P'", fontSize: 18, color: "#8a6828", margin: "8px 0", animation: "titleGlow 3s ease-in-out infinite" }}>
             WOODLAND TRIVIA
@@ -2041,8 +1639,8 @@ export default function WoodlandTrivia() {
           {/* Rules */}
           <div style={{ background: "#e8dcc8", border: "2px solid #b8a888", padding: "10px 14px", marginBottom: 18, textAlign: "left", borderRadius: 4 }}>
             <p style={{ fontSize: 8, color: "#6a5a48", lineHeight: 1.8, margin: 0 }}>
-              Roll the dice and explore the branching woodland maze!
-              At forks in the path, choose your direction wisely.
+              Roll the dice and journey along the woodland trail!
+              Land on hub spaces to answer questions and collect feathers.
               Land on golden HUB spaces and answer correctly to earn feathers.
               Hubs are spread across different branches, so explore them all!
               Collect all 6 feathers to win! Wrong answers mean a penalty roll backwards!
@@ -2075,18 +1673,18 @@ export default function WoodlandTrivia() {
                   style={{
                     width: 48,
                     height: 48,
-                    background: p.color,
+                    background: "#f5edd8",
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
-                    fontSize: 24,
                     margin: "0 auto 6px",
                     border: `3px solid ${p.accent}`,
                     boxShadow: "3px 3px 0 rgba(80,60,40,0.25)",
                     borderRadius: 8,
+                    overflow: "hidden",
                   }}
                 >
-                  {p.emoji}
+                  <img src={p.birdImage} alt={p.name} style={{ width: 40, height: 40, objectFit: "contain" }} />
                 </div>
                 <input
                   value={editNames[i] || p.name}
@@ -2422,17 +2020,17 @@ export default function WoodlandTrivia() {
                   style={{
                     width: 34,
                     height: 34,
-                    background: p.color,
+                    background: "#f5edd8",
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
-                    fontSize: 18,
                     border: `3px solid ${isCurr ? "#c89030" : p.accent}`,
                     boxShadow: "2px 2px 0 rgba(80,60,40,0.25)",
                     borderRadius: 6,
+                    overflow: "hidden",
                   }}
                 >
-                  {p.emoji}
+                  <img src={p.birdImage} alt={p.name} style={{ width: 28, height: 28, objectFit: "contain" }} />
                 </div>
                 <div>
                   <div style={{ fontSize: 9, color: isCurr ? "#8a6828" : "#5a4a35", fontWeight: "bold" }}>
@@ -2468,19 +2066,6 @@ export default function WoodlandTrivia() {
       </div>
 
       {/* ── Overlays ── */}
-      {/* Junction picker */}
-      {state.phase === "junction-choice" && state.junctionChoices && (
-        <JunctionPicker
-          choices={state.junctionChoices}
-          playerName={currentP.name}
-          onChoose={(nextNode) => {
-            playSound("click");
-            dispatch({ type: "CHOOSE_PATH", nextNode });
-          }}
-          soundEnabled={settings.sound}
-        />
-      )}
-
       {state.phase === "question" && state.currentQuestion && !showPenalty && (
         <div>
           <QuestionCard
