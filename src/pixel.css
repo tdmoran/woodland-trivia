@@ -183,6 +183,52 @@ img, canvas { image-rendering: auto; }
   animation: pixelGrow 0.4s ease-out;
 }
 
+/* Token hop animation */
+@keyframes tokenHop {
+  0% { transform: translateY(0); }
+  30% { transform: translateY(-25px); }
+  50% { transform: translateY(-30px); }
+  70% { transform: translateY(-25px); }
+  100% { transform: translateY(0); }
+}
+
+.token-hopping {
+  animation: tokenHop 0.25s ease-out;
+}
+
+/* Tree sway animation */
+@keyframes treeSway {
+  0%, 100% { transform: rotate(0deg); }
+  33% { transform: rotate(0.8deg); }
+  66% { transform: rotate(-0.8deg); }
+}
+
+/* Animal idle breathing */
+@keyframes animalBreathe {
+  0%, 100% { transform: scaleY(1) scaleX(1); }
+  50% { transform: scaleY(1.015) scaleX(1.008); }
+}
+
+/* Firefly float and glow */
+@keyframes fireflyFloat {
+  0%, 100% { opacity: 0; transform: translateY(0); }
+  15% { opacity: 0.7; }
+  50% { opacity: 0.4; transform: translateY(-18px) translateX(8px); }
+  85% { opacity: 0.8; }
+}
+
+/* Hub ambient pulse */
+@keyframes hubPulse {
+  0%, 100% { transform: scale(1); opacity: 0.3; }
+  50% { transform: scale(1.06); opacity: 0.5; }
+}
+
+/* Turn history panel slide in */
+@keyframes slideInRight {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+
 /* Mobile responsive */
 @media (max-width: 768px) {
   .pixel-btn { font-size: 10px; padding: 6px 12px; }
